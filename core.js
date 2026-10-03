@@ -38,3 +38,20 @@ export function campaignInput(b) {
   if (b.schedule && (!Number.isFinite(Date.parse(b.schedule)) || Date.parse(b.schedule) < Date.now() - 60000)) throw new Error('Escolha uma data futura para agendar.');
   return { min, max, daily };
 }
+
+export const replyOptOutFooter = 'Para parar de receber mensagens, responda SAIR.';
+export function optOutPhones(payload) {
+  if (String(payload?.event).toLowerCase().replace(/[._-]/g,'') !== 'messagesupsert') return [];
+  const items=Array.isArray(payload.data)?payload.data:[payload.data],numbers=new Set();
+  for(const item of items){
+    const key=item?.key;if(key?.fromMe!==false)continue;
+    const message=item.message?.ephemeralMessage?.message||item.message;
+    const text=message?.conversation||message?.extendedTextMessage?.text||message?.imageMessage?.caption||message?.videoMessage?.caption;
+    if(typeof text!=='string'||!/^sair[.!]?$/i.test(text.trim()))continue;
+    let jid=key.remoteJid;
+    if(typeof jid==='string'&&jid.endsWith('@lid'))jid=key.remoteJidAlt;
+    if(typeof jid!=='string'||!/^\d{10,15}@s\.whatsapp\.net$/.test(jid))continue;
+    numbers.add(jid.split('@')[0]);
+  }
+  return [...numbers];
+}

@@ -4,3 +4,14 @@ test('CSV handles quoted names, duplicates and invalid phones',()=>{const r=impo
 test('vCard accepts multiple phones and folded lines',()=>{const r=importContacts(Buffer.from('BEGIN:VCARD\r\nVERSION:3.0\r\nFN:Maria\r\n Silva\r\nTEL;TYPE=CELL:+5565999991234\r\nTEL;TYPE=HOME:+5565999994321\r\nEND:VCARD'),'agenda.vcf');assert.equal(r.contacts.length,2);assert.equal(r.contacts[0].name,'MariaSilva');});
 test('campaign validates intervals, limits and scheduling',()=>{const b={name:'Oferta',instance:'dz-vendas',text:'Olá',minDelay:60,maxDelay:120,dailyLimit:50};assert.equal(campaignInput(b).min,60);assert.throws(()=>campaignInput({...b,maxDelay:30}));assert.throws(()=>campaignInput({...b,minDelay:0}));assert.throws(()=>campaignInput({...b,dailyLimit:5000}));assert.throws(()=>campaignInput({...b,schedule:'invalid'}));});
 test('personalization treats names as literal text',()=>{assert.equal(personalize('Olá, {{nome}}!',{name:'$& Maria'}),'Olá, $& Maria!');});
+
+test('SAIR only accepts incoming direct messages and phone JIDs', async()=>{
+ const {optOutPhones}=await import('../core.js');
+ const payload={event:'messages.upsert',data:{key:{fromMe:false,remoteJid:'5565999991234@s.whatsapp.net'},message:{conversation:'  sair! '}}};
+ assert.deepEqual(optOutPhones(payload),['5565999991234']);
+ assert.deepEqual(optOutPhones({...payload,data:{...payload.data,key:{...payload.data.key,fromMe:true}}}),[]);
+ assert.deepEqual(optOutPhones({...payload,data:{...payload.data,key:{...payload.data.key,remoteJid:'1234567890@g.us'}}}),[]);
+ assert.deepEqual(optOutPhones({...payload,event:'messages.update'}),[]);
+ assert.deepEqual(optOutPhones({...payload,data:{...payload.data,message:{conversation:'Não quero sair hoje'}}}),[]);
+ assert.deepEqual(optOutPhones({...payload,data:{...payload.data,key:{fromMe:false,remoteJid:'1234567890@lid',remoteJidAlt:'5565999991234@s.whatsapp.net'}}}),['5565999991234']);
+});

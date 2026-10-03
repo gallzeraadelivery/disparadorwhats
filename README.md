@@ -55,3 +55,9 @@ Novas conexões começam sem iniciar QR automaticamente. Escolha **Conectar pelo
 ## Aparelho principal protegido
 
 A instância `principal` é reservada para outro serviço. O DisparaZap não permite criar ou iniciar campanhas com ela; a fila pausa campanhas existentes e o cliente de envio também bloqueia chamadas direcionadas a essa instância. Ela aparece como protegida no painel, sem controles de QR, código ou proxy. Nas campanhas é obrigatório escolher explicitamente um aparelho disponível; o principal não aparece na seleção. A conexão na Evolution permanece intacta para a outra plataforma.
+
+### Descadastro por resposta SAIR
+
+As conexões exclusivas `dz-` usam um webhook autenticado por instância para receber `MESSAGES_UPSERT`. Uma mensagem direta recebida com `SAIR` (sem diferenciar maiúsculas, com espaços ou ponto/exclamação final) retira a autorização, marca descadastro e ignora os envios ainda pendentes desse contato na conta proprietária. Mensagens próprias, grupos e eventos com autenticação inválida são ignorados. Eventos repetidos não geram registros duplicados de descadastro.
+
+Antes de iniciar e periodicamente durante a campanha, o backend verifica a configuração de respostas. Quando ela está válida, texto e legendas incluem “Para parar de receber mensagens, responda SAIR.” Se não estiver disponível, usa o link de descadastro. Links de campanhas anteriores continuam funcionando. Webhooks existentes de outras plataformas e o aparelho principal são preservados. Uma mensagem já aceita pela API pode terminar antes de o descadastro chegar; o webhook deve continuar disponível para bloquear os próximos envios.

@@ -1,4 +1,5 @@
 import test from 'node:test';
+import {createHmac} from 'node:crypto';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import {DatabaseSync} from 'node:sqlite';
@@ -8,11 +9,13 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 test('authenticated workflow, consent, media, queue, isolation and unsubscribe', {timeout:30000},async()=>{
- const calls=[];let fail=false,preflightFail=false;const remoteInstances=[{name:'dz-test',connectionStatus:'open'},{name:'principal',connectionStatus:'open'}];
+ const webhooks=new Map();const calls=[];let fail=false,preflightFail=false;const remoteInstances=[{name:'dz-test',connectionStatus:'open'},{name:'principal',connectionStatus:'open'}];
  const mock=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;assert.equal(req.headers.apikey,'test-api-key');res.setHeader('Content-Type','application/json');
  if(req.url==='/instance/fetchInstances')res.end(JSON.stringify(remoteInstances));
  else if(req.url==='/instance/create'){const b=JSON.parse(raw);remoteInstances.push({name:b.instanceName,connectionStatus:'open'});res.end(JSON.stringify({instance:{instanceName:b.instanceName}}));}
  else if(req.url.startsWith('/instance/connect/')){if(req.url.includes('?number=')){assert.equal(new URL(req.url,'http://mock').searchParams.get('number'),'5565999991234');res.end(JSON.stringify({pairingCode:'ABCD1234'}));}else res.end(JSON.stringify({instance:{state:'open'}}));}
+ else if(req.url.startsWith('/webhook/find/'))res.end(JSON.stringify(webhooks.get(req.url.split('/').pop())||null));
+ else if(req.url.startsWith('/webhook/set/')){const config=JSON.parse(raw).webhook;webhooks.set(req.url.split('/').pop(),config);res.end(JSON.stringify(config));}
  else if(req.url.startsWith('/proxy/set/'))res.end('{}');
  else if(req.url==='/')res.end(JSON.stringify({version:'test'}));
  else if(req.url.startsWith('/instance/connectionState')){res.statusCode=preflightFail?503:200;res.end(JSON.stringify({instance:{state:'open'}}));}
@@ -41,7 +44,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   const scheduled=(await request('/api/campaigns',{...campaign,name:'Agendada',schedule:new Date(Date.now()+600000).toISOString(),mediaId:media.id})).d;await request('/api/campaigns/'+scheduled.id+'/action',{action:'start'});
   await request('/api/campaigns/'+c.id+'/action',{action:'start'});
   for(let i=0;i<40&&calls.length===0;i++)await sleep(100);
-  assert.equal(calls.length,1);assert.match(calls[0].body.text,/Olá, Maria!/);assert.match(calls[0].body.text,/\/sair\//);assert.equal(calls[0].body.number,'5565999991234');
+  assert.equal(calls.length,1);assert.match(calls[0].body.text,/Olá, Maria!/);assert.match(calls[0].body.text,/responda SAIR/);assert.doesNotMatch(calls[0].body.text,/\/sair\//);assert.equal(calls[0].body.number,'5565999991234');
   const jobs=(await request('/api/campaigns/'+c.id+'/jobs')).d;assert.equal(jobs[0].status,'sent');
   const protectionDb=new DatabaseSync(path.join(dir,'disparazap.sqlite'));const legacy=await request('/api/campaigns',{...campaign,name:'Legada'});protectionDb.prepare("UPDATE campaigns SET instance='principal',status='running' WHERE id=?").run(legacy.d.id);await sleep(2300);assert.equal((await request('/api/campaigns')).d.find(x=>x.id===legacy.d.id).status,'paused');assert.equal((await request('/api/campaigns/'+legacy.d.id+'/action',{action:'start'})).r.status,403);assert.equal(calls.length,1);protectionDb.close();
   const imageCampaign=(await request('/api/campaigns',{...campaign,name:'Mídia',mediaId:media.id})).d;
@@ -54,7 +57,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   for(let i=0;i<40&&calls.length<3;i++)await sleep(100);
   assert.equal(calls.length,3);assert.equal((await request('/api/campaigns/'+uncertain.id+'/jobs')).d[0].status,'uncertain');assert.equal((await request('/api/campaigns')).d.find(c=>c.id===uncertain.id).status,'paused');await sleep(2300);assert.equal(calls.length,3,'uncertain sends are never automatically retried');
   const unavailable=(await request('/api/campaigns',{...campaign,name:'Conexão indisponível'})).d;await request('/api/campaigns/'+unavailable.id+'/action',{action:'start'});preflightFail=true;database.exec('UPDATE instance_limits SET next_at=0');await sleep(2300);assert.equal((await request('/api/campaigns')).d.find(c=>c.id===unavailable.id).status,'paused');assert.equal(calls.length,3);preflightFail=false;database.close();
-  const link=calls[0].body.text.split('mensagens: ')[1];assert.equal((await fetch(link)).status,200);assert.equal((await request('/api/contacts')).d[0].unsubscribed,0,'GET link must not unsubscribe');
+  const link=root+'/sair/'+contact.id+'?token='+createHmac('sha256','x'.repeat(64)).update('unsubscribe:'+contact.id).digest('hex');assert.equal((await fetch(link)).status,200);assert.equal((await request('/api/contacts')).d[0].unsubscribed,0,'GET link must not unsubscribe');
   const u=new URL(link);const unsubscribe=await fetch(link,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Origin:root},body:'token='+u.searchParams.get('token')});assert.equal(unsubscribe.status,200);
   assert.equal((await request('/api/contacts')).d[0].unsubscribed,1);assert.equal((await request('/api/campaigns',campaign)).r.status,400);
   assert.equal((await fetch(root+'/sair/'+contact.id+'?token=bad')).status,403);
@@ -74,6 +77,19 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal((await request('/api/instances')).d.length,1);assert.equal((await request('/api/instances/'+ownConnection.d.name+'/proxy',{enabled:false})).r.status,403);
   assert.equal((await request('/api/campaigns',{...campaign,instance:ownConnection.d.name,mediaId:media.id})).r.status,400);
   assert.equal((await request('/api/dashboard')).d.contacts,1);
+  const optDraft=(await request('/api/campaigns',{...campaign,instance:ownConnection.d.name,name:'Descadastro por resposta'})).d;
+  const hook='/hooks/evolution/'+ownConnection.d.name,token=createHmac('sha256','x'.repeat(64)).update('reply-optout:'+ownConnection.d.name).digest('hex');
+  const event={event:'messages.upsert',instance:ownConnection.d.name,data:{key:{fromMe:false,remoteJid:'5565999991234@s.whatsapp.net'},message:{conversation:'SAIR'}}};
+  assert.equal((await request(hook,event)).r.status,403,'unauthenticated webhooks cannot change consent');
+  const header={'x-disparazap-token':token};
+  await request(hook,{...event,data:{...event.data,key:{...event.data.key,fromMe:true}}},'POST',header);
+  assert.equal((await request('/api/contacts')).d[0].unsubscribed,0,'outgoing messages do not unsubscribe');
+  assert.equal((await request(hook,{...event,instance:'dz-test'},'POST',header)).r.status,403,'instance mismatch rejected');
+  assert.equal((await request(hook,event,'POST',header)).r.status,200);
+  assert.equal((await request('/api/contacts')).d[0].unsubscribed,1);
+  assert.equal((await request('/api/contacts')).d[0].consent,0);
+  assert.equal((await request('/api/campaigns/'+optDraft.id+'/jobs')).d[0].status,'skipped');
+  await request(hook,event,'POST',header);assert.equal(calls.length,3,'opt out never sends WhatsApp messages');
   cookie=adminCookie;assert.equal((await request('/api/contacts')).d.length,1);assert.equal((await request('/api/contacts')).d[0].unsubscribed,1);
   const users=(await request('/api/admin/users')).d;const maria=users.find(u=>u.user==='maria');assert.ok(maria);assert.equal((await request('/api/admin/users/'+maria.id,{active:false},'PATCH')).r.status,200);
   cookie=mariaCookie;assert.equal((await request('/api/me')).r.status,401);cookie=adminCookie;
