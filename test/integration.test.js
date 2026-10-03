@@ -12,7 +12,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
  const mock=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;assert.equal(req.headers.apikey,'test-api-key');res.setHeader('Content-Type','application/json');
  if(req.url==='/instance/fetchInstances')res.end(JSON.stringify(remoteInstances));
  else if(req.url==='/instance/create'){const b=JSON.parse(raw);remoteInstances.push({name:b.instanceName,connectionStatus:'open'});res.end(JSON.stringify({instance:{instanceName:b.instanceName}}));}
- else if(req.url.startsWith('/instance/connect/'))res.end(JSON.stringify({instance:{state:'open'}}));
+ else if(req.url.startsWith('/instance/connect/')){if(req.url.includes('?number=')){assert.equal(new URL(req.url,'http://mock').searchParams.get('number'),'5565999991234');res.end(JSON.stringify({pairingCode:'ABCD1234'}));}else res.end(JSON.stringify({instance:{state:'open'}}));}
  else if(req.url.startsWith('/proxy/set/'))res.end('{}');
  else if(req.url==='/')res.end(JSON.stringify({version:'test'}));
  else if(req.url.startsWith('/instance/connectionState')){res.statusCode=preflightFail?503:200;res.end(JSON.stringify({instance:{state:'open'}}));}
@@ -63,11 +63,11 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal((await request('/api/media/'+media.id)).r.status,404);
   assert.equal((await request('/api/campaigns/'+c.id+'/jobs')).d.length,0);
   assert.equal((await request('/api/campaigns/'+c.id+'/action',{action:'start'})).r.status,404);
-  assert.equal((await request('/api/instances/dz-test/qr')).r.status,404);
+  assert.equal((await request('/api/instances/dz-test/qr')).r.status,404);assert.equal((await request('/api/instances/dz-test/pair',{phone:'5565999991234'})).r.status,404);
   assert.equal((await request('/api/instances/dz-test/proxy',{enabled:false})).r.status,404);
   assert.equal((await request('/api/campaigns',campaign)).r.status,400);
   assert.equal((await request('/api/contacts',{name:'Mesmo número, outra conta',phone:'+5565999991234',list:'Teste',consent:true})).r.status,200);
-  const ownConnection=await request('/api/instances',{name:'Meu WhatsApp'});assert.equal(ownConnection.r.status,200);assert.notEqual(ownConnection.d.name,'dz-test');
+  const ownConnection=await request('/api/instances',{name:'Meu WhatsApp'});assert.equal(ownConnection.r.status,200);assert.notEqual(ownConnection.d.name,'dz-test');assert.equal((await request('/api/instances/'+ownConnection.d.name+'/pair',{phone:'invalid'})).r.status,400);assert.equal((await request('/api/instances/'+ownConnection.d.name+'/pair',{phone:'+5565999991234'})).d.pairingCode,'ABCD1234');
   assert.equal((await request('/api/instances')).d.length,1);assert.equal((await request('/api/instances/'+ownConnection.d.name+'/proxy',{enabled:false})).r.status,403);
   assert.equal((await request('/api/campaigns',{...campaign,instance:ownConnection.d.name,mediaId:media.id})).r.status,400);
   assert.equal((await request('/api/dashboard')).d.contacts,1);

@@ -47,3 +47,7 @@ No acesso inicial, escolha **Criar minha conta** para cadastrar nome, usuário e
 Acesso administrativo: menu **Gerenciar usuários**. Desativar uma conta invalida suas sessões e pausa campanhas. Cada endpoint confere o proprietário dos contatos, mídias, campanhas e conexões. Mesmo o administrador administra suas próprias campanhas; o painel de usuários não dá acesso às agendas dos outros usuários.
 
 A versão atual permite cadastro público sem confirmação por email. Existe limite de tentativas e de três conexões por usuário. Para comercialização, complementar recuperação de senha, verificação de email, quotas de armazenamento, termos e políticas, cobrança e observabilidade.
+
+## Conectar pelo número
+
+Novas conexões começam sem iniciar QR automaticamente. Escolha **Conectar pelo número**, informe DDI + DDD + telefone e digite o código exibido no WhatsApp, em **Aparelhos conectados → Conectar aparelho → Conectar com número de telefone**. O código não é SMS e não registra novamente a conta. A opção de QR permanece disponível. Se uma sessão já iniciou por QR, a Evolution pode devolver apenas esse QR; finalize por ele ou crie uma conexão nova para usar o código. A confirmação real exige o celular do titular.

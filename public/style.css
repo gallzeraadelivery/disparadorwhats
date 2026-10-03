@@ -3,3 +3,5 @@
 
 .text-button{border:0;background:none;color:var(--green);font-weight:700;cursor:pointer;padding:0}.signup-link{font-size:12px;text-align:center;color:var(--muted);margin:22px 0!important}
 @media(max-width:720px){.profile{display:flex;align-self:flex-end;margin-top:12px;padding-top:0;border:0}.profile .avatar{width:28px;height:28px}.profile small{margin-top:3px}}
+
+.pair-code{text-align:center;background:#edf5e8;border:1px solid #d7e4ce;border-radius:12px;padding:24px 10px;margin:20px 0;font:800 32px Manrope;letter-spacing:4px;color:var(--green)}.pair-steps{padding-left:22px;line-height:1.9;font-size:13px}.pair-steps li{margin:12px 0}
