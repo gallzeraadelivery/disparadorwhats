@@ -1,0 +1,1 @@
+{"name":"disparazap","version":"0.1.0","private":true,"type":"module","scripts":{"start":"node --disable-warning=ExperimentalWarning server.js","test":"node --test test/*.test.js"},"engines":{"node":">=22.13"},"dependencies":{"csv-parse":"^7.0.3","express":"^5.1.0","helmet":"^8.1.0","multer":"^2.0.2"}}

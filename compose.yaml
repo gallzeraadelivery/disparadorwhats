@@ -1,0 +1,24 @@
+services:
+  app:
+    build: .
+    container_name: disparazap-app
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    networks:
+      - edge
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+networks:
+  edge:
+    external: true
+    name: disparazap_web
