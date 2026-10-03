@@ -6,7 +6,7 @@ import { randomBytes, randomUUID, createHmac, scryptSync, timingSafeEqual, rando
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { initialize, hashPassword } from './schema.js';
-import { phone, personalize, importContacts, campaignInput, optOutPhones, replyOptOutFooter, reportReason, reportFilter, reportCsv, evolutionErrorDetail } from './core.js';
+import { phone, personalize, importContacts, campaignInput, optOutPhones, replyOptOutFooter, reportReason, reportFilter, reportCsv, evolutionErrorDetail, failedMessageIds } from './core.js';
 const app = express(), dataDir = path.resolve(process.env.DATA_DIR || './data');
 mkdirSync(dataDir, { recursive:true }); mkdirSync(path.join(dataDir,'media'),{recursive:true});
 const secret = process.env.SESSION_SECRET, password = process.env.ADMIN_PASSWORD;
@@ -41,13 +41,22 @@ app.get('/sair/:id',(req,res)=>{if(!unsubscribeValid(req.params.id,req.query.tok
 app.post('/sair/:id',express.urlencoded({extended:false}),(req,res)=>{if(!unsubscribeValid(req.params.id,req.body.token))return res.status(403).send('Link inválido.');run('UPDATE contacts SET unsubscribed=1,consent=0 WHERE id=?',req.params.id);log('Descadastro solicitado por contato.',one('SELECT owner_id FROM contacts WHERE id=?',req.params.id)?.owner_id||adminId);res.type('html').send('<!doctype html><html lang="pt-BR"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Descadastro confirmado</title><link rel="stylesheet" href="/style.css"><body><main><h1>Descadastro confirmado.</h1><p>Você não receberá novas campanhas do DisparaZap.</p></main></body></html>');});
 // Each instance has a separate authentication secret; no customer text is logged.
 const webhookToken=name=>sign('reply-optout:'+name);
+function applyFailedReceipt(name,id){
+ const job=one("SELECT j.id,j.campaign_id,c.owner_id FROM jobs j JOIN campaigns c ON c.id=j.campaign_id WHERE c.instance=? AND j.message_id=? AND j.status IN ('sent','sending','uncertain')",name,id);if(!job)return;
+ run("UPDATE jobs SET status='failed',error='Evolution informou ERROR após aceitar o envio; motivo técnico não informado pela API.',updated_at=CURRENT_TIMESTAMP WHERE id=?",job.id);
+ run("UPDATE campaigns SET status='paused' WHERE id=? AND status='running'",job.campaign_id);
+ log('Falha posterior informada pela Evolution; próximos envios da campanha pausados. Sem reenvio automático.',job.owner_id);
+}
+
 app.post('/hooks/evolution/:instance',(req,res)=>{
  const name=req.params.instance,expected=webhookToken(name),token=req.get('x-disparazap-token');
  if(typeof token!=='string'||token.length!==expected.length||!timingSafeEqual(Buffer.from(token),Buffer.from(expected)))return res.status(403).json({error:'Webhook inválido.'});
  const instance=one('SELECT * FROM instances WHERE name=?',name);
  if(!instance||protectedInstance(name)||req.body?.instance!==name)return res.status(403).json({error:'Instância inválida.'});
- const numbers=optOutPhones(req.body);let changed=0;
+ const numbers=optOutPhones(req.body),failed=failedMessageIds(req.body);let changed=0;
  db.exec('BEGIN');try{
+ for(const id of failed){run('INSERT OR IGNORE INTO failed_receipts(instance,message_id) VALUES(?,?)',name,id);applyFailedReceipt(name,id);}
+ run("DELETE FROM failed_receipts WHERE created_at<datetime('now','-30 days')");
  for(const number of numbers){
  const contact=one('SELECT * FROM contacts WHERE owner_id=? AND phone=?',instance.owner_id,number);if(!contact)continue;
  changed+=Number(run('UPDATE contacts SET consent=0,unsubscribed=1 WHERE id=? AND (consent!=0 OR unsubscribed!=1)',contact.id).changes);
@@ -74,9 +83,9 @@ async function ensureReplyWebhook(name){
  try{
  let config=await evo('/webhook/find/'+nameValid(name));
  if(config?.url&&config.url!==url){replyReady.delete(name);return false;}
- const valid=c=>c?.enabled===true&&c.url===url&&c.webhookByEvents===false&&c.events?.includes('MESSAGES_UPSERT')&&c.headers?.['x-disparazap-token']===token;
+ const valid=c=>c?.enabled===true&&c.url===url&&c.webhookByEvents===false&&c.events?.includes('MESSAGES_UPSERT')&&c.events?.includes('MESSAGES_UPDATE')&&c.headers?.['x-disparazap-token']===token;
  if(!valid(config)){
- await evo('/webhook/set/'+nameValid(name),'POST',{webhook:{enabled:true,url,headers:{'x-disparazap-token':token},webhookByEvents:false,webhookBase64:false,events:['MESSAGES_UPSERT']}});
+ await evo('/webhook/set/'+nameValid(name),'POST',{webhook:{enabled:true,url,headers:{'x-disparazap-token':token},webhookByEvents:false,webhookBase64:false,events:['MESSAGES_UPSERT','MESSAGES_UPDATE']}});
  config=await evo('/webhook/find/'+nameValid(name));
  }
  if(!valid(config)){replyReady.delete(name);return false;}
@@ -162,6 +171,7 @@ async function tick(){if(working)return;working=true;try{
   run('UPDATE campaigns SET next_at=? WHERE id=?',next,c.id);
   try{let result;if(c.media_id){const m=one('SELECT * FROM media WHERE id=?',c.media_id);result=await evo('/message/sendMedia/'+nameValid(c.instance),'POST',{number:job.phone,mediatype:m.mime.startsWith('image')?'image':'video',mimetype:m.mime,caption:text,media:readFileSync(m.path).toString('base64'),fileName:m.name});}else result=await evo('/message/sendText/'+nameValid(c.instance),'POST',{number:job.phone,text,linkPreview:false});
    run("UPDATE jobs SET status='sent',message_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",result.key?.id||null,job.job_id);
+   if(result.key?.id&&one('SELECT message_id FROM failed_receipts WHERE instance=? AND message_id=?',c.instance,result.key.id))applyFailedReceipt(c.instance,result.key.id);
   }catch(e){run("UPDATE jobs SET status='uncertain',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",'Envio não confirmado: '+e.message,job.job_id);run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);log('Campanha pausada após falha de envio: '+c.name,c.owner_id);}
  }
 }catch(e){console.error('Worker:',e.message);}finally{working=false;}}

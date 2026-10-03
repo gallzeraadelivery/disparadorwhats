@@ -58,7 +58,7 @@ A instância `principal` é reservada para outro serviço. O DisparaZap não per
 
 ### Descadastro por resposta SAIR
 
-As conexões exclusivas `dz-` usam um webhook autenticado por instância para receber `MESSAGES_UPSERT`. Uma mensagem direta recebida com `SAIR` (sem diferenciar maiúsculas, com espaços ou ponto/exclamação final) retira a autorização, marca descadastro e ignora os envios ainda pendentes desse contato na conta proprietária. Mensagens próprias, grupos e eventos com autenticação inválida são ignorados. Eventos repetidos não geram registros duplicados de descadastro.
+As conexões exclusivas `dz-` usam um webhook autenticado por instância para receber `MESSAGES_UPSERT` e `MESSAGES_UPDATE`. Uma mensagem direta recebida com `SAIR` (sem diferenciar maiúsculas, com espaços ou ponto/exclamação final) retira a autorização, marca descadastro e ignora os envios ainda pendentes desse contato na conta proprietária. Mensagens próprias, grupos e eventos com autenticação inválida são ignorados. Eventos repetidos não geram registros duplicados de descadastro.
 
 Antes de iniciar e periodicamente durante a campanha, o backend verifica a configuração de respostas. Quando ela está válida, texto e legendas incluem “Para parar de receber mensagens, responda SAIR.” Se não estiver disponível, usa o link de descadastro. Links de campanhas anteriores continuam funcionando. Webhooks existentes de outras plataformas e o aparelho principal são preservados. Uma mensagem já aceita pela API pode terminar antes de o descadastro chegar; o webhook deve continuar disponível para bloquear os próximos envios.
 
@@ -69,3 +69,5 @@ O menu Modelos de mensagem permite cadastrar, editar, excluir e reutilizar texto
 ### Relatórios de campanha
 
 Em Campanhas, Relatório mostra o resumo e cada destinatário com status, motivo registrado, última atualização e ID da mensagem quando disponível. Filtros incluem aceitos pela API, fila, falhas e envios não confirmados, ignorados e cancelados. Baixar CSV exporta o filtro selecionado em UTF-8; horários do arquivo são UTC. Relatórios e arquivos só podem ser acessados pelo dono da campanha. O aceite da API não confirma entrega ou leitura, e erros antigos mostram apenas o detalhe que foi registrado na época. Novas falhas incluem o detalhe textual retornado pela Evolution, quando disponível, com credenciais da integração ocultadas.
+
+Quando a Evolution informa ERROR após o aceite, o relatório muda para Falha e a campanha em execução é pausada, sem reenvio automático. Os eventos autenticados ficam registrados por 30 dias para tratar também notificações que chegam antes da resposta de envio. A integração nem sempre fornece o motivo técnico do erro.

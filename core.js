@@ -79,3 +79,9 @@ export function evolutionErrorDetail(payload){
  const collect=(v,depth=0)=>{if(depth>4)return [];if(typeof v==='string')return [v];if(Array.isArray(v))return v.flatMap(x=>collect(x,depth+1));if(v&&typeof v==='object')return ['message','error','reason'].flatMap(k=>collect(v[k],depth+1));return [];};
  return [...new Set([...collect(payload?.response),...collect(payload)])].join('; ').replace(/[\r\n\t]/g,' ').slice(0,500);
 }
+
+export function failedMessageIds(payload){
+ if(String(payload?.event).toLowerCase().replace(/[._-]/g,'')!=='messagesupdate')return [];
+ const data=Array.isArray(payload.data)?payload.data:[payload.data];
+ return [...new Set(data.filter(x=>x&&x.key?.fromMe!==false&&x.fromMe!==false&&x.status==='ERROR').map(x=>x.keyId||x.key?.id||x.id).filter(id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id)))];
+}

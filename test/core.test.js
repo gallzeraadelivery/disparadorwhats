@@ -24,3 +24,8 @@ test('reports preserve reasons, filter uncertain sends, and export safe CSV',asy
  const csv=reportCsv(campaign,rows),parsed=importContacts(Buffer.from(csv),'relatorio.csv');assert.equal(parsed.contacts.length,2);assert.equal(parsed.invalid,0);assert.match(csv,/'=HYPERLINK/);assert.match(csv,/HTTP 500; erro\ncom detalhe/);assert.match(csv,/Campanha ""teste""/);
  assert.equal(evolutionErrorDetail({response:{message:[['Número inválido']]},error:'Bad Request'}),'Número inválido; Bad Request');
 });
+
+test('late delivery failures accept only ERROR message updates',async()=>{
+ const {failedMessageIds}=await import('../core.js');const payload={event:'messages.update',data:{key:{id:'ABC123',fromMe:true},status:'ERROR'}};
+ assert.deepEqual(failedMessageIds(payload),['ABC123']);assert.deepEqual(failedMessageIds({...payload,event:'messages.upsert'}),[]);assert.deepEqual(failedMessageIds({...payload,data:{...payload.data,status:'DELIVERY_ACK'}}),[]);assert.deepEqual(failedMessageIds({...payload,data:{...payload.data,key:{id:'ABC123',fromMe:false}}}),[]);
+});

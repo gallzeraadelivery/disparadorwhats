@@ -53,6 +53,12 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   for(let i=0;i<40&&calls.length===0;i++)await sleep(100);
   assert.equal(calls.length,1);assert.match(calls[0].body.text,/Olá, Maria!/);assert.match(calls[0].body.text,/responda SAIR/);assert.doesNotMatch(calls[0].body.text,/\/sair\//);assert.equal(calls[0].body.number,'5565999991234');
   const jobs=(await request('/api/campaigns/'+c.id+'/jobs')).d;assert.equal(jobs[0].status,'sent');
+  const deliveryToken=createHmac('sha256','x'.repeat(64)).update('reply-optout:dz-test').digest('hex');
+  const failedEvent={event:'messages.update',instance:'dz-test',data:{keyId:'MOCK-MESSAGE-ID',fromMe:true,status:'ERROR'}};
+  assert.equal((await request('/hooks/evolution/dz-test',failedEvent)).r.status,403);
+  // The unknown ID receipt is stored before a send result and survives for later matching.
+  await request('/hooks/evolution/dz-test',{...failedEvent,data:{...failedEvent.data,keyId:'UNKNOWN-ID'}},'POST',{'x-disparazap-token':deliveryToken});
+  assert.equal((await request('/api/campaigns/'+c.id+'/jobs')).d[0].status,'sent');
   const report=(await request('/api/campaigns/'+c.id+'/report')).d;assert.equal(report.summary.total,1);assert.equal(report.summary.sent,1);assert.match(report.rows[0].reason,/entrega e leitura não confirmadas/);assert.ok(report.rows[0].updated_at);assert.equal(report.rows[0].message_id,'MOCK-MESSAGE-ID');
   const csvResponse=await fetch(root+'/api/campaigns/'+c.id+'/report.csv',{headers:{Cookie:cookie}});assert.equal(csvResponse.status,200);assert.match(csvResponse.headers.get('content-type'),/text\/csv/);const csvText=await csvResponse.text();assert.match(csvText,/5565999991234/);assert.match(csvText,/Aceito pela API/);assert.match(csvText,/ultima_atualizacao_utc/);
   const filteredResponse=await fetch(root+'/api/campaigns/'+c.id+'/report.csv?status=issues',{headers:{Cookie:cookie}});assert.equal((await filteredResponse.text()).trim().split('\n').length,1,'empty issue filter exports header only');
@@ -112,6 +118,9 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.ok((await request('/api/campaigns')).d.find(x=>x.id===c.id),'deleting a template preserves campaign history');
   const users=(await request('/api/admin/users')).d;const maria=users.find(u=>u.user==='maria');assert.ok(maria);assert.equal((await request('/api/admin/users/'+maria.id,{active:false},'PATCH')).r.status,200);
   cookie=mariaCookie;assert.equal((await request('/api/me')).r.status,401);cookie=adminCookie;
+  await request('/hooks/evolution/dz-test',failedEvent,'POST',{'x-disparazap-token':deliveryToken});
+  assert.equal((await request('/api/campaigns/'+c.id+'/jobs')).d[0].status,'failed');
+  const lateReport=(await request('/api/campaigns/'+c.id+'/report')).d;assert.equal(lateReport.summary.failed,1);assert.equal(lateReport.summary.sent,0);assert.match(lateReport.rows[0].reason,/ERROR/);
   await request('/api/logout',{});assert.equal((await request('/api/contacts')).r.status,401);
  }finally{child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));await new Promise(r=>mock.close(r));rmSync(dir,{recursive:true,force:true});}
 });
