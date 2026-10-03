@@ -8,6 +8,7 @@ export function initialize(db, admin, password) {
  CREATE TABLE IF NOT EXISTS campaigns(id TEXT PRIMARY KEY,name TEXT,instance TEXT,text TEXT,list TEXT,media_id TEXT REFERENCES media(id),status TEXT DEFAULT 'draft',min_delay INTEGER,max_delay INTEGER,daily_limit INTEGER,schedule TEXT,next_at INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,owner_id TEXT REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS templates(id TEXT PRIMARY KEY,name TEXT NOT NULL,text TEXT NOT NULL,media_id TEXT REFERENCES media(id),owner_id TEXT NOT NULL REFERENCES users(id),created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,campaign_id TEXT REFERENCES campaigns(id),contact_id TEXT REFERENCES contacts(id),status TEXT DEFAULT 'pending',error TEXT,message_id TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(campaign_id,contact_id));
+ CREATE TABLE IF NOT EXISTS job_messages(job_id TEXT NOT NULL REFERENCES jobs(id),position INTEGER NOT NULL,media_id TEXT REFERENCES media(id),status TEXT NOT NULL DEFAULT 'pending',message_id TEXT,error TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(job_id,position));
  CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY,description TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,owner_id TEXT REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,expires INTEGER,user_id TEXT REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS instance_limits(instance TEXT PRIMARY KEY,next_at INTEGER DEFAULT 0);
@@ -32,6 +33,11 @@ export function initialize(db, admin, password) {
   if(!db.prepare(`PRAGMA table_info(${table})`).all().some(c=>c.name==='owner_id'))db.exec(`ALTER TABLE ${table} ADD COLUMN owner_id TEXT REFERENCES users(id)`);
   db.prepare(`UPDATE ${table} SET owner_id=? WHERE owner_id IS NULL`).run(owner.id);
  }
+ for(const table of ['campaigns','templates']){
+  if(!db.prepare(`PRAGMA table_info(${table})`).all().some(c=>c.name==='media_ids'))db.exec(`ALTER TABLE ${table} ADD COLUMN media_ids TEXT`);
+  for(const row of db.prepare(`SELECT id,media_id FROM ${table} WHERE media_ids IS NULL`).all())db.prepare(`UPDATE ${table} SET media_ids=? WHERE id=?`).run(JSON.stringify(row.media_id?[row.media_id]:[]),row.id);
+ }
+ db.exec("UPDATE job_messages SET status='uncertain',error='Servidor reiniciado durante envio. Confira antes de reenviar.' WHERE status='sending'");
  if(!db.prepare('PRAGMA table_info(sessions)').all().some(c=>c.name==='user_id'))db.exec('ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id)');
  db.exec('DELETE FROM sessions WHERE user_id IS NULL');
  db.prepare('UPDATE contacts SET owner_id=? WHERE owner_id IS NULL').run(owner.id);

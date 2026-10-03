@@ -72,7 +72,7 @@ export function reportFilter(rows,status='all') {
 }
 export function reportCsv(campaign,rows) {
   const cell=value=>{let s=String(value??'');if(/^[\s]*[=+@-]|^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
-  const data=[['campanha','aparelho','nome','telefone','status','motivo','ultima_atualizacao_utc','id_mensagem'],...rows.map(r=>[campaign.name,campaign.instance,r.name,r.phone,reportStatusLabels[r.status]||r.status,r.reason,r.updated_at,r.message_id])];
+  const data=[['campanha','aparelho','nome','telefone','status','motivo','ultima_atualizacao_utc','id_mensagem','resultado_por_mensagem'],...rows.map(r=>[campaign.name,campaign.instance,r.name,r.phone,reportStatusLabels[r.status]||r.status,r.reason,r.updated_at,r.message_id,(r.messages||[]).map(m=>`${m.position+1}. ${m.name||'Texto'}: ${reportStatusLabels[m.status]||m.status}${m.message_id?' · ID '+m.message_id:''}${m.error?' · '+m.error:''}`).join(' | ')])];
   return '\uFEFF'+data.map(row=>row.map(cell).join(';')).join('\r\n')+'\r\n';
 }
 export function evolutionErrorDetail(payload){

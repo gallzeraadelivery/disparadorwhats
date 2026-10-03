@@ -1,0 +1,60 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import http from 'node:http';
+import {createHmac} from 'node:crypto';
+import {DatabaseSync} from 'node:sqlite';
+import {spawn} from 'node:child_process';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+test('mixed attachments persist order, survive restart and stop after partial failure',{timeout:30000},async()=>{
+ const calls=[];let fail=false,webhook=null;
+ const mock=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;res.setHeader('Content-Type','application/json');
+ if(req.url==='/instance/fetchInstances')res.end(JSON.stringify([{name:'dz-multi',connectionStatus:'open'}]));
+ else if(req.url.startsWith('/instance/connectionState'))res.end(JSON.stringify({instance:{state:'open'}}));
+ else if(req.url.startsWith('/webhook/find'))res.end(JSON.stringify(webhook));
+ else if(req.url.startsWith('/webhook/set'))res.end(JSON.stringify(webhook=JSON.parse(raw).webhook));
+ else if(req.url.startsWith('/message/')){calls.push(JSON.parse(raw));res.statusCode=fail?500:201;res.end(JSON.stringify(fail?{error:'video rejected'}:{key:{id:'ATTACHMENT-'+calls.length}}));}
+ else {res.statusCode=404;res.end('{}');}});
+ await new Promise(r=>mock.listen(0,'127.0.0.1',r));
+ const port=await new Promise(r=>{const s=http.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});
+ const root=`http://127.0.0.1:${port}`,dir=mkdtempSync(path.join(tmpdir(),'dz-attachments-'));
+ const env={...process.env,PORT:String(port),PUBLIC_URL:root,DATA_DIR:dir,SESSION_SECRET:'z'.repeat(64),ADMIN_PASSWORD:'test-password-long',EVOLUTION_URL:`http://127.0.0.1:${mock.address().port}`,EVOLUTION_API_KEY:'test-key',COOKIE_SECURE:'false'};
+ let child,cookie,db;
+ const start=async()=>{child=spawn(process.execPath,['--disable-warning=ExperimentalWarning','server.js'],{env,stdio:'ignore'});for(let i=0;i<50;i++){try{if((await fetch(root+'/health')).ok)return;}catch{}await sleep(100);}throw Error('Server did not start');};
+ const stop=async()=>{child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));child=null;};
+ const request=async(url,body,headers={})=>{const r=await fetch(root+url,{method:body?'POST':'GET',headers:{...(body&&!(body instanceof FormData)?{'Content-Type':'application/json'}:{}),...(cookie?{Cookie:cookie}:{}),...headers},body:body?(body instanceof FormData?body:JSON.stringify(body)):undefined});return {r,d:await r.json()};};
+ const waitCalls=async n=>{for(let i=0;i<50&&calls.length<n;i++)await sleep(100);assert.equal(calls.length,n);await sleep(100);};
+ const release=()=>{db.exec('UPDATE instance_limits SET next_at=0; UPDATE campaigns SET next_at=0');};
+ try{
+ await start();const login=await request('/api/login',{user:'admin',password:'test-password-long'});cookie=login.r.headers.get('set-cookie').split(';')[0];
+ await request('/api/contacts',{name:'Teste',phone:'5565999991234',list:'Teste',consent:true});
+ const upload=async(bytes,name,mime)=>{const form=new FormData();form.append('file',new Blob([Buffer.from(bytes)],{type:mime}),name);const {r,d}=await request('/api/media',form);assert.equal(r.status,200);return d.id;};
+ const image=await upload([137,80,78,71,13,10,26,10,1],'foto.png','image/png');
+ const video=await upload([0,0,0,24,102,116,121,112,109,112,52,50],'video.mp4','video/mp4');
+ const mediaIds=[image,video];
+ const model=(await request('/api/templates',{name:'Foto e vídeo',text:'Conteúdo',mediaIds})).d;
+ assert.ok(model.id);assert.deepEqual((await request('/api/templates')).d[0].media_ids,mediaIds);
+ const campaign={name:'Foto e vídeo',instance:'dz-multi',text:'Olá, {{nome}}!',list:'Teste',minDelay:30,maxDelay:30,dailyLimit:10,mediaIds};
+ for(const bad of [[image,image],Array(11).fill(image),'invalid',[image,'missing']])assert.equal((await request('/api/campaigns',{...campaign,mediaIds:bad})).r.status,400);
+ const c=(await request('/api/campaigns',campaign)).d;assert.ok(c.id);assert.deepEqual((await request('/api/campaigns')).d[0].media_ids,mediaIds);assert.equal(calls.length,0);
+ await request(`/api/campaigns/${c.id}/action`,{action:'start'});await waitCalls(1);
+ assert.equal(calls[0].mediatype,'image');assert.match(calls[0].caption,/Olá, Teste!/);
+ let report=(await request(`/api/campaigns/${c.id}/report`)).d;assert.equal(report.summary.sent,0);assert.equal(report.summary.pending,1);assert.deepEqual(report.rows[0].messages.map(m=>m.status),['sent','pending']);
+ await sleep(2100);assert.equal(calls.length,1,'the second attachment respects the interval');
+ await stop();await start();db=new DatabaseSync(path.join(dir,'disparazap.sqlite'));release();await waitCalls(2);
+ assert.equal(calls[1].mediatype,'video');assert.doesNotMatch(calls[1].caption,/Olá/);assert.match(calls[1].caption,/SAIR/);
+ report=(await request(`/api/campaigns/${c.id}/report`)).d;assert.equal(report.summary.sent,1);assert.equal(report.rows[0].messages.length,2);assert.deepEqual(report.rows[0].messages.map(m=>m.message_id),['ATTACHMENT-1','ATTACHMENT-2']);
+ await request(`/api/campaigns/${c.id}/action`,{action:'cancel'});
+ // A late error for the first attachment is still matched after the second was accepted.
+ const token=createHmac('sha256',env.SESSION_SECRET).update('reply-optout:dz-multi').digest('hex');
+ await request('/hooks/evolution/dz-multi',{event:'messages.update',instance:'dz-multi',data:{keyId:'ATTACHMENT-1',fromMe:true,status:'ERROR'}},{'x-disparazap-token':token});
+ report=(await request(`/api/campaigns/${c.id}/report`)).d;assert.equal(report.summary.failed,1);assert.deepEqual(report.rows[0].messages.map(m=>m.status),['failed','sent']);
+ const partial=(await request('/api/campaigns',{...campaign,name:'Falha no segundo arquivo'})).d;
+ release();await request(`/api/campaigns/${partial.id}/action`,{action:'start'});await waitCalls(3);
+ fail=true;release();await waitCalls(4);
+ report=(await request(`/api/campaigns/${partial.id}/report`)).d;assert.equal(report.campaign.status,'paused');assert.deepEqual(report.rows[0].messages.map(m=>m.status),['sent','uncertain']);assert.match(report.rows[0].messages[1].error,/video rejected/);
+ release();await sleep(2100);assert.equal(calls.length,4,'partial failures do not retry accepted files');
+ }finally{db?.close();if(child)await stop();await new Promise(r=>mock.close(r));rmSync(dir,{recursive:true,force:true});}
+});

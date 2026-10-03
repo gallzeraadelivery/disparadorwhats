@@ -71,3 +71,9 @@ O menu Modelos de mensagem permite cadastrar, editar, excluir e reutilizar texto
 Em Campanhas, Relatório mostra o resumo e cada destinatário com status, motivo registrado, última atualização e ID da mensagem quando disponível. Filtros incluem aceitos pela API, fila, falhas e envios não confirmados, ignorados e cancelados. Baixar CSV exporta o filtro selecionado em UTF-8; horários do arquivo são UTC. Relatórios e arquivos só podem ser acessados pelo dono da campanha. O aceite da API não confirma entrega ou leitura, e erros antigos mostram apenas o detalhe que foi registrado na época. Novas falhas incluem o detalhe textual retornado pela Evolution, quando disponível, com credenciais da integração ocultadas.
 
 Quando a Evolution informa ERROR após o aceite, o relatório muda para Falha e a campanha em execução é pausada, sem reenvio automático. Os eventos autenticados ficam registrados por 30 dias para tratar também notificações que chegam antes da resposta de envio. A integração nem sempre fornece o motivo técnico do erro.
+
+### Vários anexos
+
+Campanhas e modelos aceitam até 10 fotos JPG/PNG e vídeos MP4, com até 20 MB por arquivo. A seleção permite vários arquivos, mantendo sua ordem; modelos existentes permitem remover anexos individualmente e acrescentar outros. O texto acompanha o primeiro arquivo e os demais levam a instrução de descadastro. Cada arquivo é uma mensagem separada e conta no limite de envios da conexão; os intervalos também valem entre anexos.
+
+O destinatário só fica como aceito quando todas as mensagens forem aceitas pela API. O relatório e o CSV mostram o resultado e o ID de cada mensagem. Reiniciar o serviço preserva anexos já aceitos; falhas e envios sem confirmação pausam a campanha sem repetir arquivos. Campanhas e modelos anteriores mantêm suas mídias.

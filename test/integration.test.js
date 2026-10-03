@@ -85,7 +85,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal((await request('/api/templates')).d.length,0);
   assert.equal((await request('/api/templates/'+savedTemplate.id,{name:'Outro usuário',text:'Não permitido'},'PATCH')).r.status,404);
   assert.equal((await request('/api/templates/'+savedTemplate.id,null,'DELETE')).r.status,404);
-  assert.equal((await request('/api/templates',{name:'Mídia alheia',text:'Teste',mediaId:media.id})).r.status,400);
+  assert.equal((await request('/api/templates',{name:'Mídia alheia',text:'Teste',mediaIds:[media.id]})).r.status,400);
   assert.equal((await request('/api/admin/users')).r.status,403);assert.equal((await request('/api/contacts')).d.length,0);assert.equal((await request('/api/campaigns')).d.length,0);assert.equal((await request('/api/instances')).d.length,0);
   assert.equal((await request('/api/contacts/'+contact.id,{consent:true},'PATCH')).r.status,404);
   assert.equal((await request('/api/media/'+media.id)).r.status,404);
@@ -98,7 +98,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal((await request('/api/contacts',{name:'Mesmo número, outra conta',phone:'+5565999991234',list:'Teste',consent:true})).r.status,200);
   const ownConnection=await request('/api/instances',{name:'Meu WhatsApp'});assert.equal(ownConnection.r.status,200);assert.notEqual(ownConnection.d.name,'dz-test');assert.equal((await request('/api/instances/'+ownConnection.d.name+'/pair',{phone:'invalid'})).r.status,400);assert.equal((await request('/api/instances/'+ownConnection.d.name+'/pair',{phone:'+5565999991234'})).d.pairingCode,'ABCD1234');
   assert.equal((await request('/api/instances')).d.length,1);assert.equal((await request('/api/instances/'+ownConnection.d.name+'/proxy',{enabled:false})).r.status,403);
-  assert.equal((await request('/api/campaigns',{...campaign,instance:ownConnection.d.name,mediaId:media.id})).r.status,400);
+  assert.equal((await request('/api/campaigns',{...campaign,instance:ownConnection.d.name,mediaIds:[media.id]})).r.status,400);
   assert.equal((await request('/api/dashboard')).d.contacts,1);
   const optDraft=(await request('/api/campaigns',{...campaign,instance:ownConnection.d.name,name:'Descadastro por resposta'})).d;
   const hook='/hooks/evolution/'+ownConnection.d.name,token=createHmac('sha256','x'.repeat(64)).update('reply-optout:'+ownConnection.d.name).digest('hex');
