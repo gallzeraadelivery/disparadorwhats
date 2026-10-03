@@ -8,7 +8,7 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 test('authenticated workflow, consent, media, queue, isolation and unsubscribe', {timeout:30000},async()=>{
- const calls=[];let fail=false,preflightFail=false;const remoteInstances=[{name:'dz-test',connectionStatus:'open'}];
+ const calls=[];let fail=false,preflightFail=false;const remoteInstances=[{name:'dz-test',connectionStatus:'open'},{name:'principal',connectionStatus:'open'}];
  const mock=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;assert.equal(req.headers.apikey,'test-api-key');res.setHeader('Content-Type','application/json');
  if(req.url==='/instance/fetchInstances')res.end(JSON.stringify(remoteInstances));
  else if(req.url==='/instance/create'){const b=JSON.parse(raw);remoteInstances.push({name:b.instanceName,connectionStatus:'open'});res.end(JSON.stringify({instance:{instanceName:b.instanceName}}));}
@@ -31,7 +31,9 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   let login=await request('/api/login',{user:'admin',password:'test-password-long'});assert.equal(login.r.status,200);cookie=login.r.headers.get('set-cookie').split(';')[0];assert.match(login.r.headers.get('set-cookie'),/HttpOnly/);
   assert.equal((await request('/api/contacts',{name:'Bad',phone:'65999991234'},'POST', {Origin:'https://evil.example'})).r.status,403);
   await request('/api/contacts',{name:'Maria',phone:'+5565999991234',list:'Teste',consent:false});
+  const protectedDevice=(await request('/api/instances')).d.find(i=>i.name==='principal');assert.equal(protectedDevice.protected,true);assert.equal(protectedDevice.sendable,false);assert.equal((await request('/api/instances/principal/qr')).r.status,403);assert.equal((await request('/api/instances/principal/pair',{phone:'5565999991234'})).r.status,403);assert.equal((await request('/api/instances/principal/proxy',{enabled:false})).r.status,403);
   const campaign={name:'Teste seguro',instance:'dz-test',text:'Olá, {{nome}}!',list:'Teste',minDelay:30,maxDelay:30,dailyLimit:5};
+  assert.equal((await request('/api/campaigns',{...campaign,instance:'principal'})).r.status,403);
   assert.equal((await request('/api/campaigns',campaign)).r.status,400);
   const contact=(await request('/api/contacts')).d[0];await request('/api/contacts/'+contact.id,{consent:true},'PATCH');
   let c=(await request('/api/campaigns',campaign)).d;assert.equal(c.total,1);await sleep(2200);assert.equal(calls.length,0,'drafts never send');
@@ -41,6 +43,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   for(let i=0;i<40&&calls.length===0;i++)await sleep(100);
   assert.equal(calls.length,1);assert.match(calls[0].body.text,/Olá, Maria!/);assert.match(calls[0].body.text,/\/sair\//);assert.equal(calls[0].body.number,'5565999991234');
   const jobs=(await request('/api/campaigns/'+c.id+'/jobs')).d;assert.equal(jobs[0].status,'sent');
+  const protectionDb=new DatabaseSync(path.join(dir,'disparazap.sqlite'));const legacy=await request('/api/campaigns',{...campaign,name:'Legada'});protectionDb.prepare("UPDATE campaigns SET instance='principal',status='running' WHERE id=?").run(legacy.d.id);await sleep(2300);assert.equal((await request('/api/campaigns')).d.find(x=>x.id===legacy.d.id).status,'paused');assert.equal((await request('/api/campaigns/'+legacy.d.id+'/action',{action:'start'})).r.status,403);assert.equal(calls.length,1);protectionDb.close();
   const imageCampaign=(await request('/api/campaigns',{...campaign,name:'Mídia',mediaId:media.id})).d;
   await request('/api/campaigns/'+imageCampaign.id+'/action',{action:'start'});await sleep(2300);assert.equal(calls.length,1,'same instance shares its interval across campaigns');
   const database=new DatabaseSync(path.join(dir,'disparazap.sqlite'));database.exec('UPDATE instance_limits SET next_at=0');

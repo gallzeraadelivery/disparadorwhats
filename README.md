@@ -51,3 +51,7 @@ A versão atual permite cadastro público sem confirmação por email. Existe li
 ## Conectar pelo número
 
 Novas conexões começam sem iniciar QR automaticamente. Escolha **Conectar pelo número**, informe DDI + DDD + telefone e digite o código exibido no WhatsApp, em **Aparelhos conectados → Conectar aparelho → Conectar com número de telefone**. O código não é SMS e não registra novamente a conta. A opção de QR permanece disponível. Se uma sessão já iniciou por QR, a Evolution pode devolver apenas esse QR; finalize por ele ou crie uma conexão nova para usar o código. A confirmação real exige o celular do titular.
+
+## Aparelho principal protegido
+
+A instância `principal` é reservada para outro serviço. O DisparaZap não permite criar ou iniciar campanhas com ela; a fila pausa campanhas existentes e o cliente de envio também bloqueia chamadas direcionadas a essa instância. Ela aparece como protegida no painel, sem controles de QR, código ou proxy. Nas campanhas é obrigatório escolher explicitamente um aparelho disponível; o principal não aparece na seleção. A conexão na Evolution permanece intacta para a outra plataforma.
