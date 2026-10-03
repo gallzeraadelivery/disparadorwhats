@@ -61,3 +61,7 @@ A instância `principal` é reservada para outro serviço. O DisparaZap não per
 As conexões exclusivas `dz-` usam um webhook autenticado por instância para receber `MESSAGES_UPSERT`. Uma mensagem direta recebida com `SAIR` (sem diferenciar maiúsculas, com espaços ou ponto/exclamação final) retira a autorização, marca descadastro e ignora os envios ainda pendentes desse contato na conta proprietária. Mensagens próprias, grupos e eventos com autenticação inválida são ignorados. Eventos repetidos não geram registros duplicados de descadastro.
 
 Antes de iniciar e periodicamente durante a campanha, o backend verifica a configuração de respostas. Quando ela está válida, texto e legendas incluem “Para parar de receber mensagens, responda SAIR.” Se não estiver disponível, usa o link de descadastro. Links de campanhas anteriores continuam funcionando. Webhooks existentes de outras plataformas e o aparelho principal são preservados. Uma mensagem já aceita pela API pode terminar antes de o descadastro chegar; o webhook deve continuar disponível para bloquear os próximos envios.
+
+### Modelos de mensagem
+
+O menu Modelos de mensagem permite cadastrar, editar, excluir e reutilizar texto com imagem ou vídeo. Cada conta acessa apenas seus modelos e mídias. Campanhas também têm a ação Salvar como modelo. Usar na campanha abre um novo rascunho com o conteúdo preenchido; aparelho, lista e início são escolhas separadas. Alterar ou excluir um modelo preserva as campanhas existentes e suas mídias.

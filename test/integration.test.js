@@ -41,6 +41,13 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   const contact=(await request('/api/contacts')).d[0];await request('/api/contacts/'+contact.id,{consent:true},'PATCH');
   let c=(await request('/api/campaigns',campaign)).d;assert.equal(c.total,1);await sleep(2200);assert.equal(calls.length,0,'drafts never send');
   const form=new FormData();form.append('file',new Blob([Buffer.from([137,80,78,71,13,10,26,10,1,2,3])],{type:'image/png'}),'test.png');const media=(await request('/api/media',form)).d;assert.ok(media.id);
+  const savedTemplate=(await request('/api/templates',{name:'Modelo reutilizável',text:campaign.text,mediaId:media.id})).d;
+  assert.ok(savedTemplate.id);let templates=(await request('/api/templates')).d;assert.equal(templates.length,1);assert.equal(templates[0].media_id,media.id);assert.equal(templates[0].text,campaign.text);
+  assert.equal((await request('/api/templates',{name:'Inválido',text:'x'.repeat(4001)})).r.status,400);
+  assert.equal((await request('/api/templates/'+savedTemplate.id,{name:'Modelo editado',text:'Novo texto',mediaId:null},'PATCH')).r.status,200);
+  templates=(await request('/api/templates')).d;assert.equal(templates[0].media_id,null);assert.equal(templates[0].text,'Novo texto');
+  assert.equal((await request('/api/campaigns')).d.find(x=>x.id===c.id).text,campaign.text,'editing a template preserves existing campaigns');
+  assert.equal(calls.length,0,'saving templates never sends');
   const scheduled=(await request('/api/campaigns',{...campaign,name:'Agendada',schedule:new Date(Date.now()+600000).toISOString(),mediaId:media.id})).d;await request('/api/campaigns/'+scheduled.id+'/action',{action:'start'});
   await request('/api/campaigns/'+c.id+'/action',{action:'start'});
   for(let i=0;i<40&&calls.length===0;i++)await sleep(100);
@@ -64,6 +71,10 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal(calls.length,3,'scheduled campaign must not send yet');
   const adminCookie=cookie;
   const signup=await request('/api/register',{user:'maria',name:'Maria',password:'maria-test-password',role:'admin'});assert.equal(signup.r.status,201);assert.equal(signup.d.role,'user');cookie=signup.r.headers.get('set-cookie').split(';')[0];const mariaCookie=cookie;
+  assert.equal((await request('/api/templates')).d.length,0);
+  assert.equal((await request('/api/templates/'+savedTemplate.id,{name:'Outro usuário',text:'Não permitido'},'PATCH')).r.status,404);
+  assert.equal((await request('/api/templates/'+savedTemplate.id,null,'DELETE')).r.status,404);
+  assert.equal((await request('/api/templates',{name:'Mídia alheia',text:'Teste',mediaId:media.id})).r.status,400);
   assert.equal((await request('/api/admin/users')).r.status,403);assert.equal((await request('/api/contacts')).d.length,0);assert.equal((await request('/api/campaigns')).d.length,0);assert.equal((await request('/api/instances')).d.length,0);
   assert.equal((await request('/api/contacts/'+contact.id,{consent:true},'PATCH')).r.status,404);
   assert.equal((await request('/api/media/'+media.id)).r.status,404);
@@ -91,6 +102,8 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal((await request('/api/campaigns/'+optDraft.id+'/jobs')).d[0].status,'skipped');
   await request(hook,event,'POST',header);assert.equal(calls.length,3,'opt out never sends WhatsApp messages');
   cookie=adminCookie;assert.equal((await request('/api/contacts')).d.length,1);assert.equal((await request('/api/contacts')).d[0].unsubscribed,1);
+  assert.equal((await request('/api/templates/'+savedTemplate.id,null,'DELETE')).r.status,200);assert.equal((await request('/api/templates')).d.length,0);
+  assert.ok((await request('/api/campaigns')).d.find(x=>x.id===c.id),'deleting a template preserves campaign history');
   const users=(await request('/api/admin/users')).d;const maria=users.find(u=>u.user==='maria');assert.ok(maria);assert.equal((await request('/api/admin/users/'+maria.id,{active:false},'PATCH')).r.status,200);
   cookie=mariaCookie;assert.equal((await request('/api/me')).r.status,401);cookie=adminCookie;
   await request('/api/logout',{});assert.equal((await request('/api/contacts')).r.status,401);

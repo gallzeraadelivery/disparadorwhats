@@ -6,6 +6,7 @@ export function initialize(db, admin, password) {
  CREATE TABLE IF NOT EXISTS contacts(id TEXT PRIMARY KEY,name TEXT NOT NULL,phone TEXT NOT NULL,list TEXT NOT NULL,consent INTEGER NOT NULL DEFAULT 0,unsubscribed INTEGER NOT NULL DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,owner_id TEXT REFERENCES users(id),UNIQUE(owner_id,phone));
  CREATE TABLE IF NOT EXISTS media(id TEXT PRIMARY KEY,name TEXT,mime TEXT,path TEXT,owner_id TEXT REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS campaigns(id TEXT PRIMARY KEY,name TEXT,instance TEXT,text TEXT,list TEXT,media_id TEXT REFERENCES media(id),status TEXT DEFAULT 'draft',min_delay INTEGER,max_delay INTEGER,daily_limit INTEGER,schedule TEXT,next_at INTEGER DEFAULT 0,created_at TEXT DEFAULT CURRENT_TIMESTAMP,owner_id TEXT REFERENCES users(id));
+ CREATE TABLE IF NOT EXISTS templates(id TEXT PRIMARY KEY,name TEXT NOT NULL,text TEXT NOT NULL,media_id TEXT REFERENCES media(id),owner_id TEXT NOT NULL REFERENCES users(id),created_at TEXT DEFAULT CURRENT_TIMESTAMP,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,campaign_id TEXT REFERENCES campaigns(id),contact_id TEXT REFERENCES contacts(id),status TEXT DEFAULT 'pending',error TEXT,message_id TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,UNIQUE(campaign_id,contact_id));
  CREATE TABLE IF NOT EXISTS activity(id INTEGER PRIMARY KEY,description TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP,owner_id TEXT REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,expires INTEGER,user_id TEXT REFERENCES users(id));
@@ -33,7 +34,7 @@ export function initialize(db, admin, password) {
  if(!db.prepare('PRAGMA table_info(sessions)').all().some(c=>c.name==='user_id'))db.exec('ALTER TABLE sessions ADD COLUMN user_id TEXT REFERENCES users(id)');
  db.exec('DELETE FROM sessions WHERE user_id IS NULL');
  db.prepare('UPDATE contacts SET owner_id=? WHERE owner_id IS NULL').run(owner.id);
- db.exec("CREATE INDEX IF NOT EXISTS contacts_owner ON contacts(owner_id); CREATE INDEX IF NOT EXISTS campaigns_owner ON campaigns(owner_id); CREATE INDEX IF NOT EXISTS jobs_campaign_status ON jobs(campaign_id,status); UPDATE jobs SET status='uncertain',error='Servidor reiniciado durante envio. Verifique no WhatsApp antes de reenviar.' WHERE status='sending'");
+ db.exec("CREATE INDEX IF NOT EXISTS templates_owner ON templates(owner_id); CREATE INDEX IF NOT EXISTS contacts_owner ON contacts(owner_id); CREATE INDEX IF NOT EXISTS campaigns_owner ON campaigns(owner_id); CREATE INDEX IF NOT EXISTS jobs_campaign_status ON jobs(campaign_id,status); UPDATE jobs SET status='uncertain',error='Servidor reiniciado durante envio. Verifique no WhatsApp antes de reenviar.' WHERE status='sending'");
  const problems=db.prepare('PRAGMA foreign_key_check').all();if(problems.length)throw new Error('Falha na integridade da migração.');
  return owner.id;
 }
