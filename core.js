@@ -55,3 +55,27 @@ export function optOutPhones(payload) {
   }
   return [...numbers];
 }
+
+export const reportStatusLabels = {pending:'Na fila',sending:'Enviando',sent:'Aceito pela API',failed:'Falha',uncertain:'Envio não confirmado',skipped:'Ignorado',cancelled:'Cancelado'};
+export function reportReason(job,campaign) {
+  if(job.error)return job.error;
+  if(job.status==='sent')return 'API aceitou o envio; entrega e leitura não confirmadas.';
+  if(job.status==='pending')return campaign.status==='draft'?'Rascunho: envio não iniciado.':campaign.status==='paused'?'Campanha pausada; contato ainda não enviado.':campaign.schedule&&Date.parse(campaign.schedule)>Date.now()?'Aguardando o agendamento.':'Aguardando processamento, intervalo ou limite de envios.';
+  if(job.status==='sending')return 'Envio em andamento; aguardando resposta da API.';
+  if(job.status==='cancelled')return 'Envio cancelado antes de ser iniciado.';
+  if(job.status==='skipped')return 'Envio ignorado; motivo específico não registrado.';
+  return 'Motivo específico não registrado.';
+}
+export function reportFilter(rows,status='all') {
+  if(!['all','issues',...Object.keys(reportStatusLabels)].includes(status))throw new Error('Filtro de relatório inválido.');
+  return rows.filter(r=>status==='all'||status==='issues'&&['failed','uncertain'].includes(r.status)||r.status===status);
+}
+export function reportCsv(campaign,rows) {
+  const cell=value=>{let s=String(value??'');if(/^[\s]*[=+@-]|^[\t\r\n]/.test(s))s="'"+s;return '"'+s.replace(/"/g,'""')+'"';};
+  const data=[['campanha','aparelho','nome','telefone','status','motivo','ultima_atualizacao_utc','id_mensagem'],...rows.map(r=>[campaign.name,campaign.instance,r.name,r.phone,reportStatusLabels[r.status]||r.status,r.reason,r.updated_at,r.message_id])];
+  return '\uFEFF'+data.map(row=>row.map(cell).join(';')).join('\r\n')+'\r\n';
+}
+export function evolutionErrorDetail(payload){
+ const collect=(v,depth=0)=>{if(depth>4)return [];if(typeof v==='string')return [v];if(Array.isArray(v))return v.flatMap(x=>collect(x,depth+1));if(v&&typeof v==='object')return ['message','error','reason'].flatMap(k=>collect(v[k],depth+1));return [];};
+ return [...new Set([...collect(payload?.response),...collect(payload)])].join('; ').replace(/[\r\n\t]/g,' ').slice(0,500);
+}

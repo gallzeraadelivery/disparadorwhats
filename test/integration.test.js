@@ -53,6 +53,11 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   for(let i=0;i<40&&calls.length===0;i++)await sleep(100);
   assert.equal(calls.length,1);assert.match(calls[0].body.text,/Olá, Maria!/);assert.match(calls[0].body.text,/responda SAIR/);assert.doesNotMatch(calls[0].body.text,/\/sair\//);assert.equal(calls[0].body.number,'5565999991234');
   const jobs=(await request('/api/campaigns/'+c.id+'/jobs')).d;assert.equal(jobs[0].status,'sent');
+  const report=(await request('/api/campaigns/'+c.id+'/report')).d;assert.equal(report.summary.total,1);assert.equal(report.summary.sent,1);assert.match(report.rows[0].reason,/entrega e leitura não confirmadas/);assert.ok(report.rows[0].updated_at);assert.equal(report.rows[0].message_id,'MOCK-MESSAGE-ID');
+  const csvResponse=await fetch(root+'/api/campaigns/'+c.id+'/report.csv',{headers:{Cookie:cookie}});assert.equal(csvResponse.status,200);assert.match(csvResponse.headers.get('content-type'),/text\/csv/);const csvText=await csvResponse.text();assert.match(csvText,/5565999991234/);assert.match(csvText,/Aceito pela API/);assert.match(csvText,/ultima_atualizacao_utc/);
+  const filteredResponse=await fetch(root+'/api/campaigns/'+c.id+'/report.csv?status=issues',{headers:{Cookie:cookie}});assert.equal((await filteredResponse.text()).trim().split('\n').length,1,'empty issue filter exports header only');
+  assert.equal((await request('/api/campaigns/'+c.id+'/report.csv?status=invalid')).r.status,400);
+
   const protectionDb=new DatabaseSync(path.join(dir,'disparazap.sqlite'));const legacy=await request('/api/campaigns',{...campaign,name:'Legada'});protectionDb.prepare("UPDATE campaigns SET instance='principal',status='running' WHERE id=?").run(legacy.d.id);await sleep(2300);assert.equal((await request('/api/campaigns')).d.find(x=>x.id===legacy.d.id).status,'paused');assert.equal((await request('/api/campaigns/'+legacy.d.id+'/action',{action:'start'})).r.status,403);assert.equal(calls.length,1);protectionDb.close();
   const imageCampaign=(await request('/api/campaigns',{...campaign,name:'Mídia',mediaId:media.id})).d;
   await request('/api/campaigns/'+imageCampaign.id+'/action',{action:'start'});await sleep(2300);assert.equal(calls.length,1,'same instance shares its interval across campaigns');
@@ -62,7 +67,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   const limited=(await request('/api/campaigns',{...campaign,name:'Limite',dailyLimit:1})).d;await request('/api/campaigns/'+limited.id+'/action',{action:'start'});database.exec('UPDATE instance_limits SET next_at=0');await sleep(2300);assert.equal(calls.length,2,'daily limit is shared across campaigns');await request('/api/campaigns/'+limited.id+'/action',{action:'cancel'});
   fail=true;const uncertain=(await request('/api/campaigns',{...campaign,name:'Falha'})).d;await request('/api/campaigns/'+uncertain.id+'/action',{action:'start'});
   for(let i=0;i<40&&calls.length<3;i++)await sleep(100);
-  assert.equal(calls.length,3);assert.equal((await request('/api/campaigns/'+uncertain.id+'/jobs')).d[0].status,'uncertain');assert.equal((await request('/api/campaigns')).d.find(c=>c.id===uncertain.id).status,'paused');await sleep(2300);assert.equal(calls.length,3,'uncertain sends are never automatically retried');
+  assert.equal(calls.length,3);assert.equal((await request('/api/campaigns/'+uncertain.id+'/jobs')).d[0].status,'uncertain');const failureReport=(await request('/api/campaigns/'+uncertain.id+'/report')).d;assert.equal(failureReport.summary.uncertain,1);assert.match(failureReport.rows[0].reason,/HTTP 500/);assert.match(failureReport.rows[0].reason,/test/);assert.equal((await request('/api/campaigns')).d.find(c=>c.id===uncertain.id).status,'paused');await sleep(2300);assert.equal(calls.length,3,'uncertain sends are never automatically retried');
   const unavailable=(await request('/api/campaigns',{...campaign,name:'Conexão indisponível'})).d;await request('/api/campaigns/'+unavailable.id+'/action',{action:'start'});preflightFail=true;database.exec('UPDATE instance_limits SET next_at=0');await sleep(2300);assert.equal((await request('/api/campaigns')).d.find(c=>c.id===unavailable.id).status,'paused');assert.equal(calls.length,3);preflightFail=false;database.close();
   const link=root+'/sair/'+contact.id+'?token='+createHmac('sha256','x'.repeat(64)).update('unsubscribe:'+contact.id).digest('hex');assert.equal((await fetch(link)).status,200);assert.equal((await request('/api/contacts')).d[0].unsubscribed,0,'GET link must not unsubscribe');
   const u=new URL(link);const unsubscribe=await fetch(link,{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded',Origin:root},body:'token='+u.searchParams.get('token')});assert.equal(unsubscribe.status,200);
@@ -79,6 +84,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal((await request('/api/contacts/'+contact.id,{consent:true},'PATCH')).r.status,404);
   assert.equal((await request('/api/media/'+media.id)).r.status,404);
   assert.equal((await request('/api/campaigns/'+c.id+'/jobs')).d.length,0);
+  assert.equal((await request('/api/campaigns/'+c.id+'/report')).r.status,404);assert.equal((await request('/api/campaigns/'+c.id+'/report.csv')).r.status,404);
   assert.equal((await request('/api/campaigns/'+c.id+'/action',{action:'start'})).r.status,404);
   assert.equal((await request('/api/instances/dz-test/qr')).r.status,404);assert.equal((await request('/api/instances/dz-test/pair',{phone:'5565999991234'})).r.status,404);
   assert.equal((await request('/api/instances/dz-test/proxy',{enabled:false})).r.status,404);

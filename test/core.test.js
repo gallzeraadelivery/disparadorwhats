@@ -15,3 +15,12 @@ test('SAIR only accepts incoming direct messages and phone JIDs', async()=>{
  assert.deepEqual(optOutPhones({...payload,data:{...payload.data,message:{conversation:'Não quero sair hoje'}}}),[]);
  assert.deepEqual(optOutPhones({...payload,data:{...payload.data,key:{fromMe:false,remoteJid:'1234567890@lid',remoteJidAlt:'5565999991234@s.whatsapp.net'}}}),['5565999991234']);
 });
+
+test('reports preserve reasons, filter uncertain sends, and export safe CSV',async()=>{
+ const {reportReason,reportFilter,reportCsv,evolutionErrorDetail}=await import('../core.js');
+ const campaign={name:'Campanha "teste"',instance:'dz-test',status:'draft'};
+ const rows=[{name:'=HYPERLINK("malicioso")',phone:'5565999991234',status:'uncertain',error:'HTTP 500; erro\ncom detalhe',updated_at:'2026-10-03 20:00:00'},{name:'Maria',phone:'5565999994321',status:'sent'}].map(r=>({...r,reason:reportReason(r,campaign)}));
+ assert.equal(reportFilter(rows,'issues').length,1);assert.throws(()=>reportFilter(rows,'invalid'));assert.equal(reportReason({status:'pending'},campaign),'Rascunho: envio não iniciado.');
+ const csv=reportCsv(campaign,rows),parsed=importContacts(Buffer.from(csv),'relatorio.csv');assert.equal(parsed.contacts.length,2);assert.equal(parsed.invalid,0);assert.match(csv,/'=HYPERLINK/);assert.match(csv,/HTTP 500; erro\ncom detalhe/);assert.match(csv,/Campanha ""teste""/);
+ assert.equal(evolutionErrorDetail({response:{message:[['Número inválido']]},error:'Bad Request'}),'Número inválido; Bad Request');
+});

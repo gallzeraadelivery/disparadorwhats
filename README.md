@@ -65,3 +65,7 @@ Antes de iniciar e periodicamente durante a campanha, o backend verifica a confi
 ### Modelos de mensagem
 
 O menu Modelos de mensagem permite cadastrar, editar, excluir e reutilizar texto com imagem ou vídeo. Cada conta acessa apenas seus modelos e mídias. Campanhas também têm a ação Salvar como modelo. Usar na campanha abre um novo rascunho com o conteúdo preenchido; aparelho, lista e início são escolhas separadas. Alterar ou excluir um modelo preserva as campanhas existentes e suas mídias.
+
+### Relatórios de campanha
+
+Em Campanhas, Relatório mostra o resumo e cada destinatário com status, motivo registrado, última atualização e ID da mensagem quando disponível. Filtros incluem aceitos pela API, fila, falhas e envios não confirmados, ignorados e cancelados. Baixar CSV exporta o filtro selecionado em UTF-8; horários do arquivo são UTC. Relatórios e arquivos só podem ser acessados pelo dono da campanha. O aceite da API não confirma entrega ou leitura, e erros antigos mostram apenas o detalhe que foi registrado na época. Novas falhas incluem o detalhe textual retornado pela Evolution, quando disponível, com credenciais da integração ocultadas.

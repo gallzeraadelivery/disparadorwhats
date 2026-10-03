@@ -5,3 +5,5 @@
 @media(max-width:720px){.profile{display:flex;align-self:flex-end;margin-top:12px;padding-top:0;border:0}.profile .avatar{width:28px;height:28px}.profile small{margin-top:3px}}
 
 .pair-code{text-align:center;background:#edf5e8;border:1px solid #d7e4ce;border-radius:12px;padding:24px 10px;margin:20px 0;font:800 32px Manrope;letter-spacing:4px;color:var(--green)}.pair-steps{padding-left:22px;line-height:1.9;font-size:13px}.pair-steps li{margin:12px 0}
+
+.report-modal{width:1000px}.report-modal .toolbar{flex-wrap:wrap;margin-top:12px}.report-modal .toolbar label{min-width:200px;flex:1}.report-modal table{min-width:700px;width:100%}.report-modal td{white-space:normal;overflow-wrap:anywhere;vertical-align:top}.report-modal td:first-child{min-width:160px}.report-modal td:nth-child(3){min-width:220px}.report-modal details{margin:14px 0}.report-modal summary{cursor:pointer;font-weight:600}.report-modal #report-count{margin-bottom:12px;color:var(--muted);font-size:12px}
