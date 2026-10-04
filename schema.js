@@ -13,6 +13,7 @@ export function initialize(db, admin, password) {
  CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,expires INTEGER,user_id TEXT REFERENCES users(id));
  CREATE TABLE IF NOT EXISTS instance_limits(instance TEXT PRIMARY KEY,next_at INTEGER DEFAULT 0);
  CREATE TABLE IF NOT EXISTS instances(name TEXT PRIMARY KEY,label TEXT NOT NULL,owner_id TEXT NOT NULL REFERENCES users(id),created_at TEXT DEFAULT CURRENT_TIMESTAMP);
+ CREATE TABLE IF NOT EXISTS instance_restrictions(instance TEXT PRIMARY KEY REFERENCES instances(name),code TEXT NOT NULL,enforcement TEXT NOT NULL,until_at INTEGER NOT NULL,confirmed_at TEXT DEFAULT CURRENT_TIMESTAMP);
  CREATE TABLE IF NOT EXISTS failed_receipts(instance TEXT NOT NULL,message_id TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(instance,message_id));
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT);
  `);

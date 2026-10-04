@@ -95,10 +95,11 @@ async function ensureReplyWebhook(name){
  }catch{replyReady.delete(name);return false;}
 }
 function protectedInstance(name){return String(name).toLowerCase()==='principal';}
-function requireSendable(name){if(protectedInstance(name)){const e=new Error('Aparelho principal reservado para outro serviço. Escolha um aparelho exclusivo do DisparaZap.');e.status=403;throw e;}}
+function currentRestriction(name){const r=one('SELECT * FROM instance_restrictions WHERE instance=?',name);return r&&r.until_at>Date.now()?{code:r.code,enforcement:r.enforcement,until:new Date(r.until_at).toISOString(),message:'WhatsApp restringiu os envios pelos aparelhos conectados (código '+r.code+'). Previsão de término: '+new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Cuiaba',dateStyle:'short',timeStyle:'short'}).format(new Date(r.until_at))+' (Cuiabá). A campanha permanece pausada.'}:null;}
+function requireSendable(name){const restriction=currentRestriction(name);if(restriction){const e=new Error(restriction.message);e.status=409;throw e;}if(protectedInstance(name)){const e=new Error('Aparelho principal reservado para outro serviço. Escolha um aparelho exclusivo do DisparaZap.');e.status=403;throw e;}}
 run("UPDATE campaigns SET status='paused' WHERE lower(instance)='principal' AND status='running'");
 function nameValid(name){if(!/^[a-zA-Z0-9_-]{1,60}$/.test(name))throw new Error('Use letras sem acentos, números e hífen no nome da conexão.');return encodeURIComponent(name);}
-async function instances(owner){const local=q('SELECT * FROM instances WHERE owner_id=?',owner);if(!local.length)return [];const d=await evo('/instance/fetchInstances');if(!Array.isArray(d))throw new Error('Resposta inesperada da Evolution API.');return local.map(i=>{const remote=d.find(x=>(x.name||x.instance?.instanceName)===i.name);return {name:i.name,label:i.label,sendable:!protectedInstance(i.name),protected:protectedInstance(i.name),state:remote?.connectionStatus||remote?.instance?.status||'close'};});}
+async function instances(owner){const local=q('SELECT * FROM instances WHERE owner_id=?',owner);if(!local.length)return [];const d=await evo('/instance/fetchInstances');if(!Array.isArray(d))throw new Error('Resposta inesperada da Evolution API.');return local.map(i=>{const remote=d.find(x=>(x.name||x.instance?.instanceName)===i.name);const restriction=currentRestriction(i.name);return {name:i.name,label:i.label,restriction,sendable:!protectedInstance(i.name)&&!restriction,protected:protectedInstance(i.name),state:remote?.connectionStatus||remote?.instance?.status||'close'};});}
 function protectedControl(req,res,next){if(protectedInstance(req.params.name))return res.status(403).json({error:'Aparelho principal protegido. O DisparaZap não pode alterar esta conexão.'});next();}
 function ownedInstance(req,res,next){if(!one('SELECT name FROM instances WHERE name=? AND owner_id=?',req.params.name,req.user.id))return res.status(404).json({error:'Conexão não encontrada.'});next();}
 app.get('/api/integration',async(req,res)=>{try{const d=await evo('/');res.json({connected:true,version:d.version});}catch{res.json({connected:false,message:req.user.role==='admin'?'Integração Evolution pendente de configuração ou indisponível.':'Conexão temporariamente indisponível. Avise o administrador.'});}});
@@ -146,7 +147,7 @@ function campaignReport(id,owner){
  const rows=q('SELECT j.id,j.status,j.error,j.message_id,j.updated_at,c.name,c.phone FROM jobs j JOIN contacts c ON c.id=j.contact_id WHERE j.campaign_id=? ORDER BY j.rowid',id).map(j=>({...j,reason:reportReason(j,campaign)}));
  const summary={total:rows.length,pending:0,sending:0,sent:0,failed:0,uncertain:0,skipped:0,cancelled:0};for(const row of rows)summary[row.status]=(summary[row.status]||0)+1;
  for(const row of rows){row.messages=q('SELECT m.position,m.status,m.message_id,m.error,m.media_id,a.name FROM job_messages m LEFT JOIN media a ON a.id=m.media_id WHERE job_id=? ORDER BY m.position',row.id);if(row.messages.length){if(row.status==='pending'&&row.messages.some(m=>m.status==='sent'))row.reason=campaign.status==='paused'?'Campanha pausada; aguardando os anexos restantes.':'Aguardando o intervalo ou limite para os anexos restantes.';if(row.status==='cancelled'&&row.messages.some(m=>m.status==='sent'))row.reason='Anexos restantes cancelados; mensagens já aceitas foram preservadas.';row.reason+=` · ${row.messages.filter(m=>m.status==='sent').length}/${row.messages.length} mensagens aceitas pela API`;}}
- return {campaign:withMedia(campaign),summary,rows,generatedAt:new Date().toISOString()};
+ return {campaign:{...withMedia(campaign),restriction:currentRestriction(campaign.instance)},summary,rows,generatedAt:new Date().toISOString()};
 }
 app.get('/api/campaigns/:id/report',(req,res)=>{const report=campaignReport(req.params.id,req.user.id);if(!report)return res.status(404).json({error:'Campanha não encontrada.'});res.set('Cache-Control','no-store');res.json(report);});
 app.get('/api/campaigns/:id/report.csv',(req,res)=>{const report=campaignReport(req.params.id,req.user.id);if(!report)return res.status(404).json({error:'Campanha não encontrada.'});const rows=reportFilter(report.rows,String(req.query.status||'all'));res.set({'Cache-Control':'no-store','Content-Type':'text/csv; charset=utf-8','Content-Disposition':'attachment; filename="relatorio-campanha.csv"'});res.send(reportCsv(report.campaign,rows));});
@@ -158,7 +159,9 @@ async function adoptExisting(){if(one("SELECT value FROM metadata WHERE key='ins
 let working=false;
 async function tick(){if(working)return;working=true;try{
  await adoptExisting();
+ for(const restricted of q("SELECT c.id,c.owner_id FROM campaigns c JOIN instance_restrictions r ON r.instance=c.instance WHERE c.status='running' AND r.until_at>?",Date.now())){run("UPDATE campaigns SET status='paused' WHERE id=?",restricted.id);log('Campanha pausada: restrição de envio informada pelo WhatsApp.',restricted.owner_id);}
  for(const c of q("SELECT c.* FROM campaigns c JOIN users u ON u.id=c.owner_id WHERE c.status='running' AND c.next_at<=? AND u.active=1",Date.now())){
+  if(currentRestriction(c.instance)){run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);log('Campanha pausada: restrição de envio informada pelo WhatsApp.',c.owner_id);continue;}
   if(protectedInstance(c.instance)){run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);continue;}
   if(!one('SELECT name FROM instances WHERE name=? AND owner_id=?',c.instance,c.owner_id)){run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);continue;}
   if(c.schedule&&Date.parse(c.schedule)>Date.now())continue;
@@ -173,6 +176,7 @@ async function tick(){if(working)return;working=true;try{
   if((replyReady.get(c.instance)||0)<Date.now())await ensureReplyWebhook(c.instance);
   // Pause/cancel may occur while checking connection; recheck immediately before sending.
   if(one('SELECT status FROM campaigns WHERE id=?',c.id)?.status!=='running')continue;
+  if(currentRestriction(c.instance)){run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);continue;}
   const current=one('SELECT consent,unsubscribed FROM contacts WHERE id=? AND owner_id=?',job.contact_id,c.owner_id);if(!current?.consent||current.unsubscribed)continue;
   const footer=(replyReady.get(c.instance)||0)>Date.now()?replyOptOutFooter:'Para não receber mais mensagens: '+publicUrl+'/sair/'+job.contact_id+'?token='+sign('unsubscribe:'+job.contact_id);
   let text=personalize(c.text,job)+'\n\n'+footer;

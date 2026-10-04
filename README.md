@@ -77,3 +77,7 @@ Quando a Evolution informa ERROR após o aceite, o relatório muda para Falha e 
 Campanhas e modelos aceitam até 10 fotos JPG/PNG e vídeos MP4, com até 20 MB por arquivo. A seleção permite vários arquivos, mantendo sua ordem; modelos existentes permitem remover anexos individualmente e acrescentar outros. O texto acompanha o primeiro arquivo e os demais levam a instrução de descadastro. Cada arquivo é uma mensagem separada e conta no limite de envios da conexão; os intervalos também valem entre anexos.
 
 O destinatário só fica como aceito quando todas as mensagens forem aceitas pela API. O relatório e o CSV mostram o resultado e o ID de cada mensagem. Reiniciar o serviço preserva anexos já aceitos; falhas e envios sem confirmação pausam a campanha sem repetir arquivos. Campanhas e modelos anteriores mantêm suas mídias.
+
+### Restrições de envio da conta
+
+Uma restrição confirmada pelo WhatsApp pode ser registrada em `instance_restrictions` com código, tipo e prazo UTC em milissegundos. Enquanto vigente, o backend bloqueia criação/início de campanhas e envio pelo worker naquela conexão; o painel de conexões e o relatório exibem o motivo e o prazo em Cuiabá. Vencer o prazo não retoma campanhas automaticamente e não comprova entrega; faça um teste controlado antes de retomar. O registro local não remove a restrição do WhatsApp.
