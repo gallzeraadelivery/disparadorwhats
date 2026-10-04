@@ -4,18 +4,18 @@ import http from 'node:http';
 import {createHmac} from 'node:crypto';
 import {DatabaseSync} from 'node:sqlite';
 import {spawn} from 'node:child_process';
-import {mkdtempSync,rmSync} from 'node:fs';
+import {mkdtempSync,rmSync,readFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
-test('mixed attachments persist order, survive restart and stop after partial failure',{timeout:30000},async()=>{
- const calls=[];let fail=false,webhook=null;
+test('mixed attachments persist order, survive restart and stop after partial failure',{timeout:45000},async()=>{
+ const calls=[];let fail=false,webhook=null,hold=false,releaseResponse;
  const mock=http.createServer(async(req,res)=>{let raw='';for await(const c of req)raw+=c;res.setHeader('Content-Type','application/json');
  if(req.url==='/instance/fetchInstances')res.end(JSON.stringify([{name:'dz-multi',connectionStatus:'open'}]));
  else if(req.url.startsWith('/instance/connectionState'))res.end(JSON.stringify({instance:{state:'open'}}));
  else if(req.url.startsWith('/webhook/find'))res.end(JSON.stringify(webhook));
  else if(req.url.startsWith('/webhook/set'))res.end(JSON.stringify(webhook=JSON.parse(raw).webhook));
- else if(req.url.startsWith('/message/')){calls.push(JSON.parse(raw));res.statusCode=fail?500:201;res.end(JSON.stringify(fail?{error:'video rejected'}:{key:{id:'ATTACHMENT-'+calls.length}}));}
+ else if(req.url.startsWith('/message/')){calls.push(JSON.parse(raw));if(hold)await new Promise(resolve=>releaseResponse=resolve);res.statusCode=fail?500:201;res.end(JSON.stringify(fail?{error:'video rejected'}:{key:{id:'ATTACHMENT-'+calls.length}}));}
  else {res.statusCode=404;res.end('{}');}});
  await new Promise(r=>mock.listen(0,'127.0.0.1',r));
  const port=await new Promise(r=>{const s=http.createServer();s.listen(0,'127.0.0.1',()=>{const p=s.address().port;s.close(()=>r(p));});});
@@ -31,8 +31,8 @@ test('mixed attachments persist order, survive restart and stop after partial fa
  await start();const login=await request('/api/login',{user:'admin',password:'test-password-long'});cookie=login.r.headers.get('set-cookie').split(';')[0];
  await request('/api/contacts',{name:'Teste',phone:'5565999991234',list:'Teste',consent:true});
  const upload=async(bytes,name,mime)=>{const form=new FormData();form.append('file',new Blob([Buffer.from(bytes)],{type:mime}),name);const {r,d}=await request('/api/media',form);assert.equal(r.status,200);return d.id;};
- const image=await upload([137,80,78,71,13,10,26,10,1],'foto.png','image/png');
- const video=await upload([0,0,0,24,102,116,121,112,109,112,52,50],'video.mp4','video/mp4');
+ const image=await upload(readFileSync(new URL('./fixtures/valid.png',import.meta.url)),'foto.png','image/png');
+ const video=await upload(readFileSync(new URL('./fixtures/valid.mp4',import.meta.url)),'video.mp4','video/mp4');
  const mediaIds=[image,video];
  const model=(await request('/api/templates',{name:'Foto e vídeo',text:'Conteúdo',mediaIds})).d;
  assert.ok(model.id);assert.deepEqual((await request('/api/templates')).d[0].media_ids,mediaIds);
@@ -56,5 +56,13 @@ test('mixed attachments persist order, survive restart and stop after partial fa
  fail=true;release();await waitCalls(4);
  report=(await request(`/api/campaigns/${partial.id}/report`)).d;assert.equal(report.campaign.status,'paused');assert.deepEqual(report.rows[0].messages.map(m=>m.status),['sent','uncertain']);assert.match(report.rows[0].messages[1].error,/video rejected/);
  release();await sleep(2100);assert.equal(calls.length,4,'partial failures do not retry accepted files');
+ fail=false;hold=true;
+ const cancelled=(await request('/api/campaigns',{...campaign,name:'Cancelar durante envio'})).d;release();await request(`/api/campaigns/${cancelled.id}/action`,{action:'start'});await waitCalls(5);
+ await request(`/api/campaigns/${cancelled.id}/action`,{action:'cancel'});hold=false;releaseResponse();await sleep(200);
+ report=(await request(`/api/campaigns/${cancelled.id}/report`)).d;assert.equal(report.rows[0].status,'cancelled');assert.deepEqual(report.rows[0].messages.map(m=>m.status),['sent','cancelled']);release();await sleep(2100);assert.equal(calls.length,5);
+ hold=true;const optedOut=(await request('/api/campaigns',{...campaign,name:'SAIR durante envio'})).d;release();await request(`/api/campaigns/${optedOut.id}/action`,{action:'start'});await waitCalls(6);
+ await request('/hooks/evolution/dz-multi',{event:'messages.upsert',instance:'dz-multi',data:{key:{fromMe:false,remoteJid:'5565999991234@s.whatsapp.net'},message:{conversation:'SAIR'}}},{'x-disparazap-token':token});hold=false;releaseResponse();await sleep(200);
+ report=(await request(`/api/campaigns/${optedOut.id}/report`)).d;assert.equal(report.rows[0].status,'skipped');assert.deepEqual(report.rows[0].messages.map(m=>m.status),['sent','skipped']);release();await sleep(2100);assert.equal(calls.length,6);
+
  }finally{db?.close();if(child)await stop();await new Promise(r=>mock.close(r));rmSync(dir,{recursive:true,force:true});}
 });

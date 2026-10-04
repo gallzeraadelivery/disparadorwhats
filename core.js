@@ -16,13 +16,14 @@ export function importContacts(buffer, filename) {
     rows = [];
     for (const block of text.replace(/\r?\n[ \t]/g, '').split(/BEGIN:VCARD/i).slice(1)) {
       const name = block.match(/^FN(?:;[^:]*)?:(.*)$/im)?.[1]?.trim() || 'Contato';
-      for (const tel of block.matchAll(/^TEL(?:;[^:]*)?:(.*)$/gim)) rows.push({ name, phone: tel[1].replace(/^tel:/i, '').trim() });
+      for (const tel of block.matchAll(/^TEL(?:;[^:]*)?:(.*)$/gim)){rows.push({ name, phone: tel[1].replace(/^tel:/i, '').trim() });if(rows.length>10000)throw new Error('Limite de 10.000 registros por importação.');}
     }
   } else if (/\.csv$/i.test(filename)) {
     const header = text.split(/\r?\n/)[0];
-    rows = parse(text, { columns: h => h.map(x => x.trim().toLowerCase()), skip_empty_lines: true, delimiter: header.includes(';') ? ';' : ',', trim: true })
+    rows = parse(text, { columns: h => h.map(x => x.trim().toLowerCase()), skip_empty_lines: true, delimiter: header.includes(';') ? ';' : ',', trim: true, max_record_size:4096, to:10001 })
       .map(r => ({ name: r.nome || r.name || 'Contato', phone: r.telefone || r.phone || r.numero || r['número'] }));
   } else throw new Error('Importe um arquivo CSV ou vCard (.vcf).');
+  if(rows.length>10000)throw new Error('Limite de 10.000 registros por importação.');
   let invalid = 0;
   const contacts = new Map();
   for (const row of rows) {

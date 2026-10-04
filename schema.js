@@ -17,6 +17,7 @@ export function initialize(db, admin, password) {
  CREATE TABLE IF NOT EXISTS failed_receipts(instance TEXT NOT NULL,message_id TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(instance,message_id));
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT);
  `);
+ if(!db.prepare('PRAGMA table_info(instance_restrictions)').all().some(c=>c.name==='active'))db.exec('ALTER TABLE instance_restrictions ADD COLUMN active INTEGER NOT NULL DEFAULT 1');
  if(!db.prepare('PRAGMA table_info(failed_receipts)').all().some(c=>c.name==='error'))db.exec('ALTER TABLE failed_receipts ADD COLUMN error TEXT');
  let owner=db.prepare("SELECT * FROM users WHERE role='admin' ORDER BY created_at LIMIT 1").get();
  const credential=hashPassword(password);
@@ -44,6 +45,7 @@ export function initialize(db, admin, password) {
  db.exec('DELETE FROM sessions WHERE user_id IS NULL');
  db.prepare('UPDATE contacts SET owner_id=? WHERE owner_id IS NULL').run(owner.id);
  db.exec("CREATE INDEX IF NOT EXISTS templates_owner ON templates(owner_id); CREATE INDEX IF NOT EXISTS contacts_owner ON contacts(owner_id); CREATE INDEX IF NOT EXISTS campaigns_owner ON campaigns(owner_id); CREATE INDEX IF NOT EXISTS jobs_campaign_status ON jobs(campaign_id,status); UPDATE jobs SET status='uncertain',error='Servidor reiniciado durante envio. Verifique no WhatsApp antes de reenviar.' WHERE status='sending'");
+ db.exec("UPDATE campaigns SET status='paused' WHERE status='running' AND id IN (SELECT campaign_id FROM jobs WHERE status='uncertain')");
  const problems=db.prepare('PRAGMA foreign_key_check').all();if(problems.length)throw new Error('Falha na integridade da migração.');
  return owner.id;
 }

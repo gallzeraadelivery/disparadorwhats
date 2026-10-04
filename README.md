@@ -4,7 +4,7 @@ Painel em português para múltiplas conexões WhatsApp via Evolution API. Vers�
 
 ## Desenvolvimento
 
-Node.js 22.13 ou superior. Execute `npm ci`, copie `.env.example` para `.env`, preencha uma senha de pelo menos 12 caracteres e um segredo de sessão de pelo menos 32 caracteres. Inicie com `node --env-file=.env server.js`. Execute `npm test` para testar os importadores e o fluxo completo com uma Evolution API simulada. Nenhum teste envia mensagens reais.
+Node.js 22.13 ou superior e FFmpeg/ffprobe disponíveis no PATH (incluídos na imagem Docker). Execute `npm ci`, copie `.env.example` para `.env`, preencha uma senha de pelo menos 12 caracteres e um segredo de sessão de pelo menos 32 caracteres. Inicie com `node --env-file=.env server.js`. Execute `npm test` para testar os importadores e o fluxo completo com uma Evolution API simulada. Nenhum teste envia mensagens reais.
 
 ## Produção
 
@@ -25,7 +25,7 @@ Uma mensagem em andamento pode concluir após pausa/cancelamento. Envios com res
 
 ## Mídia e proxies
 
-JPG/PNG e MP4 de até 20 MB. A mídia vai à Evolution em base64, sem URL pública do arquivo. O proxy opcional é configurado pelo administrador nas suas próprias instâncias na Evolution; não é mecanismo de anonimato ou garantia contra bloqueios. Valide com um provedor real antes de usar. A configuração de uma conexão existente pode afetar seus outros consumidores.
+JPG/PNG e MP4 de até 20 MB. Vídeo exige H.264 e áudio AAC ou ausência de áudio. O ffprobe verifica o arquivo na importação e antes do envio; não converte arquivos nem comprova que todos os quadros são decodificáveis. Até dois uploads de mídia simultâneos. Importações CSV/vCard: até 2 MB e 10.000 registros por arquivo. A mídia vai à Evolution em base64, sem URL pública do arquivo. O proxy opcional é configurado pelo administrador nas suas próprias instâncias na Evolution; não é mecanismo de anonimato ou garantia contra bloqueios. Valide com um provedor real antes de usar. A configuração de uma conexão existente pode afetar seus outros consumidores.
 
 ## Dados e backup
 
@@ -80,6 +80,8 @@ O destinatário só fica como aceito quando todas as mensagens forem aceitas pel
 
 ### Restrições de envio da conta
 
-Uma restrição confirmada pelo WhatsApp pode ser registrada em `instance_restrictions` com código, tipo e prazo UTC em milissegundos. Enquanto vigente, o backend permite preparar e salvar rascunhos, mas bloqueia o início de campanhas e o envio pelo worker naquela conexão; o painel de conexões e o relatório exibem o motivo e o prazo em Cuiabá. Vencer o prazo não retoma campanhas automaticamente e não comprova entrega; faça um teste controlado antes de retomar. O registro local não remove a restrição do WhatsApp.
+Uma restrição confirmada pelo WhatsApp pode ser registrada em `instance_restrictions` com código, tipo e prazo UTC em milissegundos. Enquanto vigente, o backend permite preparar e salvar rascunhos, mas bloqueia o início de campanhas e o envio pelo worker naquela conexão; o painel de conexões e o relatório exibem o motivo e o prazo em Cuiabá. Vencer o prazo não remove a proteção nem retoma campanhas automaticamente: é necessário confirmar a liberação e marcar `active=0` após uma consulta real ao WhatsApp. Faça um teste controlado antes de retomar. O registro local não remove a restrição do WhatsApp.
 
 Falhas HTTP 400 que confirmam explicitamente `exists: false` para o destinatário encerram somente aquele contato, registram o motivo no relatório e permitem seguir para o próximo, respeitando intervalo e limite. Rejeições sem motivo, falhas de infraestrutura, envios incertos e restrições da conta continuam pausando a campanha. Não há reenvio automático.
+
+Uploads de JPG/PNG/MP4 passam por ffprobe; vídeos exigem H.264 e áudio AAC ou ausência de áudio. Cancelamento e SAIR durante uma requisição interrompem anexos restantes. Respostas sem ID de mensagem são incertas e pausam o envio. Reinícios com requisições interrompidas também pausam as campanhas.

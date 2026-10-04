@@ -36,3 +36,5 @@ test('failed receipts retain only validated WhatsApp error codes',async()=>{
  assert.deepEqual(failedMessageReasons(event),[{id:'ABC123',error:'Evolution informou ERROR após aceitar o envio; código WhatsApp: 463.'}]);
  assert.deepEqual(failedMessageReasons({...event,data:{...event.data,fromMe:false}}),[]);
 });
+
+test('imports reject excessive records before building the contact map',()=>{assert.throws(()=>importContacts(Buffer.from('nome,telefone\n'+'Teste,65999991234\n'.repeat(10001)),'agenda.csv'),/10.000 registros/);});

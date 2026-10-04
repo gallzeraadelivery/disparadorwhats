@@ -6,3 +6,8 @@ data/
 ADMIN-ACCESS.txt
 
 disparazap-*.jpg
+
+CONTATOS_MT_IMPORTAR.csv
+
+.env.*
+!.env.example
