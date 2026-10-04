@@ -17,6 +17,7 @@ export function initialize(db, admin, password) {
  CREATE TABLE IF NOT EXISTS failed_receipts(instance TEXT NOT NULL,message_id TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(instance,message_id));
  CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY,value TEXT);
  `);
+ if(!db.prepare('PRAGMA table_info(failed_receipts)').all().some(c=>c.name==='error'))db.exec('ALTER TABLE failed_receipts ADD COLUMN error TEXT');
  let owner=db.prepare("SELECT * FROM users WHERE role='admin' ORDER BY created_at LIMIT 1").get();
  const credential=hashPassword(password);
  if(!owner){owner={id:randomUUID()};db.prepare('INSERT INTO users(id,username,name,password_hash,salt,role) VALUES(?,?,?,?,?,?)').run(owner.id,admin,admin,credential.hash,credential.salt,'admin');}

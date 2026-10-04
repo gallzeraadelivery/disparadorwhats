@@ -6,7 +6,7 @@ import { randomBytes, randomUUID, createHmac, scryptSync, timingSafeEqual, rando
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { initialize, hashPassword } from './schema.js';
-import { phone, personalize, importContacts, campaignInput, optOutPhones, replyOptOutFooter, reportReason, reportFilter, reportCsv, evolutionErrorDetail, failedMessageIds, recipientNotOnWhatsApp } from './core.js';
+import { phone, personalize, importContacts, campaignInput, optOutPhones, replyOptOutFooter, reportReason, reportFilter, reportCsv, evolutionErrorDetail, recipientNotOnWhatsApp, failedMessageReasons } from './core.js';
 const app = express(), dataDir = path.resolve(process.env.DATA_DIR || './data');
 mkdirSync(dataDir, { recursive:true }); mkdirSync(path.join(dataDir,'media'),{recursive:true});
 const secret = process.env.SESSION_SECRET, password = process.env.ADMIN_PASSWORD;
@@ -43,7 +43,7 @@ app.post('/sair/:id',express.urlencoded({extended:false}),(req,res)=>{if(!unsubs
 const webhookToken=name=>sign('reply-optout:'+name);
 function applyFailedReceipt(name,id){
  const job=one("SELECT j.id,j.campaign_id,c.owner_id FROM jobs j JOIN campaigns c ON c.id=j.campaign_id WHERE c.instance=? AND (j.message_id=? OR EXISTS(SELECT 1 FROM job_messages m WHERE m.job_id=j.id AND m.message_id=?)) AND j.status IN ('pending','sent','sending','uncertain')",name,id,id);if(!job)return;
- const error='Evolution informou ERROR após aceitar o envio; motivo técnico não informado pela API.';
+ const error=one('SELECT error FROM failed_receipts WHERE instance=? AND message_id=?',name,id)?.error||'Evolution informou ERROR após aceitar o envio; motivo técnico não informado pela API.';
  run("UPDATE job_messages SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE job_id=? AND message_id=?",error,job.id,id);
  run("UPDATE jobs SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",error,job.id);
  run("UPDATE campaigns SET status='paused' WHERE id=? AND status='running'",job.campaign_id);
@@ -55,9 +55,9 @@ app.post('/hooks/evolution/:instance',(req,res)=>{
  if(typeof token!=='string'||token.length!==expected.length||!timingSafeEqual(Buffer.from(token),Buffer.from(expected)))return res.status(403).json({error:'Webhook inválido.'});
  const instance=one('SELECT * FROM instances WHERE name=?',name);
  if(!instance||protectedInstance(name)||req.body?.instance!==name)return res.status(403).json({error:'Instância inválida.'});
- const numbers=optOutPhones(req.body),failed=failedMessageIds(req.body);let changed=0;
+ const numbers=optOutPhones(req.body),failed=failedMessageReasons(req.body);let changed=0;
  db.exec('BEGIN');try{
- for(const id of failed){run('INSERT OR IGNORE INTO failed_receipts(instance,message_id) VALUES(?,?)',name,id);applyFailedReceipt(name,id);}
+ for(const failure of failed){run('INSERT INTO failed_receipts(instance,message_id,error) VALUES(?,?,?) ON CONFLICT(instance,message_id) DO UPDATE SET error=excluded.error',name,failure.id,failure.error);applyFailedReceipt(name,failure.id);}
  run("DELETE FROM failed_receipts WHERE created_at<datetime('now','-30 days')");
  for(const number of numbers){
  const contact=one('SELECT * FROM contacts WHERE owner_id=? AND phone=?',instance.owner_id,number);if(!contact)continue;

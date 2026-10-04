@@ -1,0 +1,46 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: evolution_candidate
+      POSTGRES_USER: evolution_candidate
+      POSTGRES_PASSWORD: ${CANDIDATE_DB_PASSWORD:?required}
+    volumes:
+      - candidate_db:/var/lib/postgresql/data
+    networks: [candidate]
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U evolution_candidate -d evolution_candidate]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+  api:
+    build: .
+    image: disparazap-evolution-candidate:rc14
+    depends_on:
+      db:
+        condition: service_healthy
+    ports: ["127.0.0.1:18080:8080"]
+    environment:
+      SERVER_PORT: "8080"
+      AUTHENTICATION_API_KEY: ${CANDIDATE_API_KEY:?required}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_ENABLED: "true"
+      DATABASE_CONNECTION_URI: postgresql://evolution_candidate:${CANDIDATE_DB_PASSWORD}@db:5432/evolution_candidate?schema=public
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      LOG_LEVEL: ERROR,WARN,INFO
+      LOG_BAILEYS: error
+      CONFIG_SESSION_PHONE_CLIENT: DisparaZap
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      TELEMETRY_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+    volumes:
+      - candidate_instances:/evolution/instances
+    networks: [candidate]
+networks:
+  candidate: {}
+volumes:
+  candidate_db: {}
+  candidate_instances: {}

@@ -54,7 +54,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   assert.equal(calls.length,1);assert.match(calls[0].body.text,/Olá, Maria!/);assert.match(calls[0].body.text,/responda SAIR/);assert.doesNotMatch(calls[0].body.text,/\/sair\//);assert.equal(calls[0].body.number,'5565999991234');
   const jobs=(await request('/api/campaigns/'+c.id+'/jobs')).d;assert.equal(jobs[0].status,'sent');
   const deliveryToken=createHmac('sha256','x'.repeat(64)).update('reply-optout:dz-test').digest('hex');
-  const failedEvent={event:'messages.update',instance:'dz-test',data:{keyId:'MOCK-MESSAGE-ID',fromMe:true,status:'ERROR'}};
+  const failedEvent={event:'messages.update',instance:'dz-test',data:{keyId:'MOCK-MESSAGE-ID',fromMe:true,status:'ERROR',messageStubParameters:['463']}};
   assert.equal((await request('/hooks/evolution/dz-test',failedEvent)).r.status,403);
   // The unknown ID receipt is stored before a send result and survives for later matching.
   await request('/hooks/evolution/dz-test',{...failedEvent,data:{...failedEvent.data,keyId:'UNKNOWN-ID'}},'POST',{'x-disparazap-token':deliveryToken});
@@ -120,7 +120,7 @@ test('authenticated workflow, consent, media, queue, isolation and unsubscribe',
   cookie=mariaCookie;assert.equal((await request('/api/me')).r.status,401);cookie=adminCookie;
   await request('/hooks/evolution/dz-test',failedEvent,'POST',{'x-disparazap-token':deliveryToken});
   assert.equal((await request('/api/campaigns/'+c.id+'/jobs')).d[0].status,'failed');
-  const lateReport=(await request('/api/campaigns/'+c.id+'/report')).d;assert.equal(lateReport.summary.failed,1);assert.equal(lateReport.summary.sent,0);assert.match(lateReport.rows[0].reason,/ERROR/);
+  const lateReport=(await request('/api/campaigns/'+c.id+'/report')).d;assert.equal(lateReport.summary.failed,1);assert.equal(lateReport.summary.sent,0);assert.match(lateReport.rows[0].reason,/ERROR/);assert.match(lateReport.rows[0].reason,/código WhatsApp: 463/);
   await request('/api/logout',{});assert.equal((await request('/api/contacts')).r.status,401);
  }finally{child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));await new Promise(r=>mock.close(r));rmSync(dir,{recursive:true,force:true});}
 });

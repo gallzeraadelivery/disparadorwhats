@@ -90,3 +90,8 @@ export function recipientNotOnWhatsApp(payload){
  const inspect=(v,depth=0)=>{if(depth>5||!v||typeof v!=='object')return false;if(Array.isArray(v))return v.some(x=>inspect(x,depth+1));if(v.exists===false&&typeof (v.number||v.jid)==='string')return true;return ['response','message','error'].some(k=>inspect(v[k],depth+1));};
  return inspect(payload);
 }
+
+export function failedMessageReasons(payload){
+ const ids=new Set(failedMessageIds(payload)),data=Array.isArray(payload?.data)?payload.data:[payload?.data];
+ return data.filter(x=>ids.has(x?.keyId||x?.key?.id||x?.id)).map(x=>{const codes=[...new Set((Array.isArray(x.messageStubParameters)?x.messageStubParameters:[]).filter(v=>/^[0-9]{1,5}$/.test(String(v))).map(String))];return {id:x.keyId||x.key?.id||x.id,error:'Evolution informou ERROR após aceitar o envio; '+(codes.length?'código WhatsApp: '+codes.join(', ')+'.':'motivo técnico não informado pela API.')};});
+}
