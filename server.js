@@ -6,7 +6,7 @@ import { randomBytes, randomUUID, createHmac, scryptSync, timingSafeEqual, rando
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs';
 import path from 'node:path';
 import { initialize, hashPassword } from './schema.js';
-import { phone, personalize, importContacts, campaignInput, optOutPhones, replyOptOutFooter, reportReason, reportFilter, reportCsv, evolutionErrorDetail, failedMessageIds } from './core.js';
+import { phone, personalize, importContacts, campaignInput, optOutPhones, replyOptOutFooter, reportReason, reportFilter, reportCsv, evolutionErrorDetail, failedMessageIds, recipientNotOnWhatsApp } from './core.js';
 const app = express(), dataDir = path.resolve(process.env.DATA_DIR || './data');
 mkdirSync(dataDir, { recursive:true }); mkdirSync(path.join(dataDir,'media'),{recursive:true});
 const secret = process.env.SESSION_SECRET, password = process.env.ADMIN_PASSWORD;
@@ -76,7 +76,7 @@ async function evo(route,method='GET',body) {
   if(!process.env.EVOLUTION_API_KEY || !process.env.EVOLUTION_URL)throw new Error('Evolution API não configurada.');
   if(route.startsWith('/message/'))requireSendable(decodeURIComponent(route.split('/')[3]||''));
   const r=await fetch(process.env.EVOLUTION_URL.replace(/\/$/,'')+route,{method,headers:{apikey:process.env.EVOLUTION_API_KEY,'Content-Type':'application/json'},body:body?JSON.stringify(body):undefined,signal:AbortSignal.timeout(45000)});
-  const d=await r.json();if(!r.ok){let detail=evolutionErrorDetail(d);for(const value of [process.env.EVOLUTION_API_KEY,secret])if(value)detail=detail.split(value).join('[credencial ocultada]');throw new Error(`Evolution API respondeu HTTP ${r.status}.${detail?' '+detail:''}`);}return d;
+  const d=await r.json();if(!r.ok){let detail=evolutionErrorDetail(d);for(const value of [process.env.EVOLUTION_API_KEY,secret])if(value)detail=detail.split(value).join('[credencial ocultada]');const e=new Error(`Evolution API respondeu HTTP ${r.status}.${detail?' '+detail:''}`);e.recipientFailure=route.startsWith('/message/')&&r.status===400&&recipientNotOnWhatsApp(d);throw e;}return d;
 }
 const replyReady=new Map();
 async function ensureReplyWebhook(name){
@@ -95,7 +95,7 @@ async function ensureReplyWebhook(name){
  }catch{replyReady.delete(name);return false;}
 }
 function protectedInstance(name){return String(name).toLowerCase()==='principal';}
-function currentRestriction(name){const r=one('SELECT * FROM instance_restrictions WHERE instance=?',name);return r&&r.until_at>Date.now()?{code:r.code,enforcement:r.enforcement,until:new Date(r.until_at).toISOString(),message:'WhatsApp restringiu os envios pelos aparelhos conectados (código '+r.code+'). Previsão de término: '+new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Cuiaba',dateStyle:'short',timeStyle:'short'}).format(new Date(r.until_at))+' (Cuiabá). A campanha permanece pausada.'}:null;}
+function currentRestriction(name){const r=one('SELECT * FROM instance_restrictions WHERE instance=?',name);return r&&r.until_at>Date.now()?{code:r.code,enforcement:r.enforcement,until:new Date(r.until_at).toISOString(),message:'WhatsApp restringiu os envios pelos aparelhos conectados ('+r.code+'). Previsão de término: '+new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Cuiaba',dateStyle:'short',timeStyle:'short'}).format(new Date(r.until_at))+' (Cuiabá). A campanha permanece pausada.'}:null;}
 function requireCampaignInstance(name){if(protectedInstance(name)){const e=new Error('Aparelho principal reservado para outro serviço. Escolha um aparelho exclusivo do DisparaZap.');e.status=403;throw e;}}
 function requireSendable(name){requireCampaignInstance(name);const restriction=currentRestriction(name);if(restriction){const e=new Error(restriction.message);e.status=409;throw e;}}
 run("UPDATE campaigns SET status='paused' WHERE lower(instance)='principal' AND status='running'");
@@ -198,7 +198,7 @@ async function tick(){if(working)return;working=true;try{
    const remaining=one("SELECT count(*) n FROM job_messages WHERE job_id=? AND status!='sent'",job.job_id).n;
    run("UPDATE jobs SET status=?,message_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='sending'",remaining?'pending':'sent',messageId,job.job_id);
    if(messageId&&one('SELECT message_id FROM failed_receipts WHERE instance=? AND message_id=?',c.instance,messageId))applyFailedReceipt(c.instance,messageId);
-  }catch(e){const error='Envio não confirmado: '+e.message;run("UPDATE job_messages SET status='uncertain',error=?,updated_at=CURRENT_TIMESTAMP WHERE job_id=? AND position=?",error,job.job_id,part.position);run("UPDATE jobs SET status='uncertain',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='failed'",error,job.job_id);run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);log('Campanha pausada após falha de envio: '+c.name,c.owner_id);}
+  }catch(e){if(e.recipientFailure){const error='Número sem WhatsApp confirmado pela Evolution (HTTP 400). Contato encerrado sem reenvio; próximos contatos continuam.';run("UPDATE job_messages SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE job_id=? AND position=?",error,job.job_id,part.position);run("UPDATE job_messages SET status='skipped',error='Anexo não enviado: número sem WhatsApp.',updated_at=CURRENT_TIMESTAMP WHERE job_id=? AND status='pending'",job.job_id);run("UPDATE jobs SET status='failed',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",error,job.job_id);log('Contato sem WhatsApp: falha registrada; campanha continua no próximo contato.',c.owner_id);continue;}const error='Envio não confirmado: '+e.message;run("UPDATE job_messages SET status='uncertain',error=?,updated_at=CURRENT_TIMESTAMP WHERE job_id=? AND position=?",error,job.job_id,part.position);run("UPDATE jobs SET status='uncertain',error=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='failed'",error,job.job_id);run("UPDATE campaigns SET status='paused' WHERE id=?",c.id);log('Campanha pausada após falha de envio: '+c.name,c.owner_id);}
 
  }
 }catch(e){console.error('Worker:',e.message);}finally{working=false;}}

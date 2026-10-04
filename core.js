@@ -85,3 +85,8 @@ export function failedMessageIds(payload){
  const data=Array.isArray(payload.data)?payload.data:[payload.data];
  return [...new Set(data.filter(x=>x&&x.key?.fromMe!==false&&x.fromMe!==false&&x.status==='ERROR').map(x=>x.keyId||x.key?.id||x.id).filter(id=>typeof id==='string'&&/^[a-zA-Z0-9_-]{1,100}$/.test(id)))];
 }
+
+export function recipientNotOnWhatsApp(payload){
+ const inspect=(v,depth=0)=>{if(depth>5||!v||typeof v!=='object')return false;if(Array.isArray(v))return v.some(x=>inspect(x,depth+1));if(v.exists===false&&typeof (v.number||v.jid)==='string')return true;return ['response','message','error'].some(k=>inspect(v[k],depth+1));};
+ return inspect(payload);
+}

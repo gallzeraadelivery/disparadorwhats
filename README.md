@@ -81,3 +81,5 @@ O destinatário só fica como aceito quando todas as mensagens forem aceitas pel
 ### Restrições de envio da conta
 
 Uma restrição confirmada pelo WhatsApp pode ser registrada em `instance_restrictions` com código, tipo e prazo UTC em milissegundos. Enquanto vigente, o backend permite preparar e salvar rascunhos, mas bloqueia o início de campanhas e o envio pelo worker naquela conexão; o painel de conexões e o relatório exibem o motivo e o prazo em Cuiabá. Vencer o prazo não retoma campanhas automaticamente e não comprova entrega; faça um teste controlado antes de retomar. O registro local não remove a restrição do WhatsApp.
+
+Falhas HTTP 400 que confirmam explicitamente `exists: false` para o destinatário encerram somente aquele contato, registram o motivo no relatório e permitem seguir para o próximo, respeitando intervalo e limite. Rejeições sem motivo, falhas de infraestrutura, envios incertos e restrições da conta continuam pausando a campanha. Não há reenvio automático.
